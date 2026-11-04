@@ -54,6 +54,12 @@ export default function AddHome() {
     // Listing form state
     const [title, setTitle] = useState('');
     const [price, setPrice] = useState('');
+    // The nightly price field, so a blocked publish can take the host to it.
+    const priceInputRef = useRef<HTMLInputElement | null>(null);
+    // The Host Agreement box on the final step, highlighted when publish is
+    // pressed without it ticked.
+    const agreementRef = useRef<HTMLDivElement | null>(null);
+    const [agreementError, setAgreementError] = useState(false);
     const [city, setCity] = useState('');
     const [description, setDescription] = useState('');
     const [homeCategories, setHomeCategories] = useState<string[]>([]);
@@ -75,11 +81,16 @@ export default function AddHome() {
 
     // Airbnb-style wizard state
     const [step, setStep] = useState(1);
-    const TOTAL_STEPS = 10;
+    const TOTAL_STEPS = 11;
     // The photos step. Next greys here until the promised five are added.
     const PHOTOS_STEP = 6;
-    // Safety details, just before the price and review (Airbnb's order).
+    // Safety details, just before the price (Airbnb's order).
     const SAFETY_STEP = 9;
+    // Price sits on its own step before the final review (Airbnb's order).
+    // Next greys here until a price above £0 is entered. The price rule in
+    // lib/listingRules stays keyed to step 10, so nothing about the publish
+    // rules changes.
+    const PRICE_STEP = 10;
     const [propertyType, setPropertyType] = useState('');
     const [privacyType, setPrivacyType] = useState('Entire place');
     const [guests, setGuests] = useState(1);
@@ -598,11 +609,15 @@ export default function AddHome() {
 
         // The terms, before anything is submitted — the same rule the server
         // enforces (lib/hostTerms). Only asked of a host with no current
-        // agreement on record.
+        // agreement on record. Publish stays clickable: instead of grey-ing
+        // the button, pressing it with the box unticked highlights the box and
+        // says what to do, the way Airbnb surfaces a missed agreement.
         if (termsOnRecord !== true) {
             const termsMsg = agreementProblem('host', null, versionForTick('host', termsTicked));
             if (termsMsg) {
-                setFormError(termsMsg);
+                setFormError('Tick the Host Agreement to publish.');
+                setAgreementError(true);
+                requestAnimationFrame(() => agreementRef.current?.scrollIntoView({ block: 'center' }));
                 return;
             }
         }
@@ -1292,25 +1307,32 @@ export default function AddHome() {
                 )}
 
                 {/* Step 10: Price + review */}
-                {step === TOTAL_STEPS && (
-                    <form onSubmit={handleListingSubmit}>
+                {/* Step 10: Price — on its own screen, before the review (Airbnb's
+                    order). Next greys until a price above £0 is entered; the helper
+                    line under the field says so. The price rule itself is unchanged. */}
+                {step === PRICE_STEP && (
+                    <div>
                         <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Now, set your price</h2>
                         <p className="text-slate-600 mb-6">You can change this anytime.</p>
-                        <div className="flex items-center border-2 rounded-2xl px-5 py-4 mb-3 max-w-xs">
+                        <div className="flex items-center border-2 rounded-2xl px-5 py-4 mb-2 max-w-xs">
                             <span className="text-3xl font-black text-slate-900 mr-2">£</span>
                             <input
+                                ref={priceInputRef}
                                 type="number"
                                 value={price}
                                 onChange={(e) => setPrice(e.target.value)}
                                 placeholder="0"
                                 className="text-3xl font-black text-slate-900 outline-none w-full"
-                                required
                             />
                             <span className="text-slate-500 ml-2">/ night</span>
                         </div>
 
+                        {!(Number(price) > 0) && (
+                            <p className="text-sm font-medium text-slate-500 mb-6">Enter a nightly price to continue.</p>
+                        )}
+
                         {Number(price) > 0 && (
-                            <div className="bg-slate-50 rounded-2xl border p-5 mb-8 max-w-xs text-sm">
+                            <div className="bg-slate-50 rounded-2xl border p-5 mb-4 max-w-xs text-sm">
                                 <div className="flex justify-between text-slate-600 mb-2">
                                     <span>Guest pays</span>
                                     <span className="font-medium text-slate-900">{formatGBP(price)} / night</span>
@@ -1332,6 +1354,15 @@ export default function AddHome() {
                                 </p>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* Step 11: Review + Host Agreement + Publish. The price is now set
+                    on its own step, so this screen only confirms and publishes. */}
+                {step === TOTAL_STEPS && (
+                    <form onSubmit={handleListingSubmit}>
+                        <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Review and publish</h2>
+                        <p className="text-slate-600 mb-6">A last look before it goes to us to check over.</p>
 
                         <div className="bg-slate-50 rounded-2xl border p-6 mb-6">
                             <h3 className="font-bold text-slate-900 mb-3">Review your listing</h3>
@@ -1341,6 +1372,7 @@ export default function AddHome() {
                                 <li><span className="font-medium text-slate-800">Guests:</span> {plural(guests, 'guest')} · {plural(bedrooms, 'bedroom')} · {plural(beds, 'bed')} · {plural(bathrooms, 'bathroom')}</li>
                                 <li><span className="font-medium text-slate-800">Amenities:</span> {amenities.length ? amenities.join(', ') : 'None selected'}</li>
                                 <li><span className="font-medium text-slate-800">Title:</span> {title || '—'}</li>
+                                <li><span className="font-medium text-slate-800">Price:</span> {Number(price) > 0 ? `${formatGBP(price)} / night` : '—'}</li>
                                 <li><span className="font-medium text-slate-800">Discounts:</span> {[
                                     newListingPromo && 'New listing 20%',
                                     lastMinuteDiscount && 'Last-minute 5%',
@@ -1358,21 +1390,24 @@ export default function AddHome() {
                             in /api/listings/publish). The underlined link opens the
                             full Host Agreement (/terms/hosts). */}
                         {termsOnRecord === false && (
-                            <div className="mb-4">
+                            <div
+                                ref={agreementRef}
+                                className={'mb-4 rounded-xl transition ' + (agreementError ? 'ring-2 ring-red-400 ring-offset-2 p-2 -m-2' : '')}
+                            >
                                 <AgreementTick
                                     doc="host"
                                     checked={termsTicked}
-                                    onChange={(v) => { setTermsTicked(v); setFormError(''); }}
+                                    onChange={(v) => { setTermsTicked(v); setFormError(''); setAgreementError(false); }}
                                 />
                             </div>
                         )}
 
                         <button
                             type="submit"
-                            // Stays disabled until the Host Agreement is ticked
-                            // (when one is owed), the same rule as the provider
-                            // sign-ups' Submit.
-                            disabled={submitting || (termsOnRecord === false && !termsTicked)}
+                            // Stays clickable: pressing it without the Host Agreement
+                            // ticked highlights the box and says what to do, rather
+                            // than sitting greyed with no explanation.
+                            disabled={submitting}
                             className="w-full py-4 bg-emerald-700 text-white font-bold rounded-xl hover:bg-emerald-800 transition disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                             {submitting ? 'Publishing...' : 'Publish listing'}
@@ -1404,17 +1439,26 @@ export default function AddHome() {
                             </p>
                         )}
                         <div className="flex-1" />
-                        <button
-                            type="button"
-                            onClick={goNext}
-                            disabled={step === PHOTOS_STEP && photos.length < NEW_LISTING_MIN_PHOTOS}
-                            className={'px-8 py-3 font-bold rounded-xl transition '
-                                + (step === PHOTOS_STEP && photos.length < NEW_LISTING_MIN_PHOTOS
-                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                    : 'bg-slate-900 hover:bg-black text-white')}
-                        >
-                            Next
-                        </button>
+                        {(() => {
+                            // Next greys on the photos step until there are five, and
+                            // on the price step until a price above £0 is entered.
+                            const nextBlocked =
+                                (step === PHOTOS_STEP && photos.length < NEW_LISTING_MIN_PHOTOS)
+                                || (step === PRICE_STEP && !(Number(price) > 0));
+                            return (
+                                <button
+                                    type="button"
+                                    onClick={goNext}
+                                    disabled={nextBlocked}
+                                    className={'px-8 py-3 font-bold rounded-xl transition '
+                                        + (nextBlocked
+                                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                            : 'bg-slate-900 hover:bg-black text-white')}
+                                >
+                                    Next
+                                </button>
+                            );
+                        })()}
                     </div>
                 )}
                 {/* The first screen is where a new host is still deciding, so the
