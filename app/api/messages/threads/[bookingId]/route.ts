@@ -16,6 +16,7 @@ import { formatGBP } from '@/lib/formatMoney';
 import { publicArea } from '@/lib/places';
 import { revealSecret } from '@/lib/listingSecrets';
 import { renderSecretTokens, type SecretView } from '@/lib/messageSecrets';
+import { attachmentsFor } from '@/lib/messagePhotoUpload';
 
 export const dynamic = 'force-dynamic';
 
@@ -344,20 +345,9 @@ export async function GET(
     // and only for the people that route lets in. A companion reads the words
     // of the thread but is not sent the photos.
     const photosVisible = isGuest || isHost || isCoHost;
-    const photoMessageIds = (messages || []).filter((m: any) => Number(m.photo_count) > 0).map((m: any) => m.id);
-    const attachmentsByMessage: Record<string, any[]> = {};
-    if (photosVisible && photoMessageIds.length) {
-        const { data: atts } = await admin
-            .from('message_attachments')
-            .select('id, message_id, width, height, position')
-            .eq('booking_id', bookingId)
-            .in('message_id', photoMessageIds)
-            .order('position', { ascending: true });
-        (atts || []).forEach((a: any) => {
-            (attachmentsByMessage[a.message_id] = attachmentsByMessage[a.message_id] || [])
-                .push({ id: a.id, width: a.width, height: a.height });
-        });
-    }
+    const attachmentsByMessage: Record<string, any[]> = photosVisible
+        ? await attachmentsFor(admin, 'booking', bookingId, messages || [])
+        : {};
     const shownMessages = (messages || []).map((m: any) => {
         const { automated, ...rest } = m;
         return {

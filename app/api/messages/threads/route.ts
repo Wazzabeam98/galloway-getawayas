@@ -273,7 +273,7 @@ export async function GET() {
     const orderIds = (myOrders || []).map((o: any) => o.id);
     const { data: orderMsgs } = orderIds.length
         ? await admin.from('messages')
-            .select('order_id, body, created_at, sender_id, recipient_id, read_at')
+            .select('order_id, body, created_at, sender_id, recipient_id, read_at, photo_count')
             .in('order_id', orderIds).order('created_at', { ascending: false })
         : { data: [] };
     const oLast: Record<string, any> = {};
@@ -323,7 +323,7 @@ export async function GET() {
     const enquiryIds = (myEnquiries || []).map((e: any) => e.id);
     const { data: enquiryMsgs } = enquiryIds.length
         ? await admin.from('messages')
-            .select('enquiry_id, body, created_at, sender_id, recipient_id, read_at')
+            .select('enquiry_id, body, created_at, sender_id, recipient_id, read_at, photo_count')
             .in('enquiry_id', enquiryIds).order('created_at', { ascending: false })
         : { data: [] };
     const eLast: Record<string, any> = {};
@@ -398,7 +398,7 @@ export async function GET() {
         const poLastInbound: Record<string, string> = {};
         if (provOrderIds.length) {
             const { data: msgs } = await admin.from('messages')
-                .select('order_id, body, created_at, sender_id, recipient_id, read_at')
+                .select('order_id, body, created_at, sender_id, recipient_id, read_at, photo_count')
                 .in('order_id', provOrderIds).order('created_at', { ascending: false });
             (msgs || []).forEach((m: any) => {
                 if (!poLast[m.order_id]) poLast[m.order_id] = m;
@@ -441,7 +441,7 @@ export async function GET() {
         const peLastInbound: Record<string, string> = {};
         if (provEnqIds.length) {
             const { data: msgs } = await admin.from('messages')
-                .select('enquiry_id, body, created_at, sender_id, recipient_id, read_at')
+                .select('enquiry_id, body, created_at, sender_id, recipient_id, read_at, photo_count')
                 .in('enquiry_id', provEnqIds).order('created_at', { ascending: false });
             (msgs || []).forEach((m: any) => {
                 if (!peLast[m.enquiry_id]) peLast[m.enquiry_id] = m;
@@ -601,6 +601,8 @@ async function dressRows(admin: any, uid: string, rows: any[], personIds: Set<st
         // Whose words the preview is: "You:" for the viewer's own, the
         // sender's first name for anyone else's.
         if (r.lastMessage) {
+            // A photo with no words previews as "Sent a photo", on every kind of thread.
+            r.lastMessage.body = messagePreview(r.lastMessage.body, r.lastMessage.photo_count);
             const sid = r.lastMessage.sender_id;
             r.lastMessage.senderLabel = !sid
                 ? null
