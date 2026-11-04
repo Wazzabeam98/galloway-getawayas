@@ -10,13 +10,14 @@
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
-import { Mail, MessageCircle, CalendarCheck, Star, Megaphone, Check } from 'lucide-react';
+import { Mail, MessageCircle, CalendarCheck, Star, Home, Megaphone, Check } from 'lucide-react';
 import PushSettings from './PushSettings';
 
 interface Prefs {
     new_message: boolean;
     booking_reminders: boolean;
     review_prompts: boolean;
+    listing_reminders: boolean;
     marketing: boolean;
 }
 
@@ -38,6 +39,12 @@ const OPTIONAL: Array<{ key: keyof Prefs; label: string; description: string; ic
         label: 'Review reminders',
         description: 'A reminder to leave a review after a stay has finished.',
         icon: Star,
+    },
+    {
+        key: 'listing_reminders',
+        label: 'Listing reminders',
+        description: 'A nudge to finish a listing you’ve started but not yet published.',
+        icon: Home,
     },
     {
         key: 'marketing',
@@ -63,6 +70,7 @@ export default function NotificationsSection() {
         new_message: true,
         booking_reminders: true,
         review_prompts: true,
+        listing_reminders: true,
         marketing: false,
     });
     const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -81,7 +89,7 @@ export default function NotificationsSection() {
 
             const { data } = await supabase
                 .from('notification_preferences')
-                .select('new_message, booking_reminders, review_prompts, marketing')
+                .select('new_message, booking_reminders, review_prompts, listing_reminders, marketing')
                 .eq('user_id', session.user.id)
                 .maybeSingle();
 
@@ -90,6 +98,7 @@ export default function NotificationsSection() {
                     new_message: data.new_message !== false,
                     booking_reminders: data.booking_reminders !== false,
                     review_prompts: data.review_prompts !== false,
+                    listing_reminders: data.listing_reminders !== false,
                     marketing: data.marketing === true,
                 });
             } else {

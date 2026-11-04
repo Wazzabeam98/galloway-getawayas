@@ -55,12 +55,13 @@ export async function GET(request: Request) {
         const hostOf: Record<string, any> = {};
         (hosts || []).forEach((h: any) => { if (h.email && !h.anonymised_at) hostOf[h.id] = h; });
 
-        // Notification preferences — a host who switched off news and offers is
-        // not emailed a nudge. (A "finish your listing" prompt is a growth
-        // nudge, so it honours the marketing opt-out and carries its unsubscribe.)
+        // Notification preferences — a host who turned the listing reminder off
+        // is not emailed. listing_reminders is on by default (like booking and
+        // review reminders), so a stalled host is reminded unless they opt out,
+        // and every email carries its one-click unsubscribe.
         const { data: prefRows } = await admin
             .from('notification_preferences')
-            .select('user_id, marketing, unsubscribe_token')
+            .select('user_id, listing_reminders, unsubscribe_token')
             .in('user_id', hostIds);
         const prefOf: Record<string, any> = {};
         (prefRows || []).forEach((p: any) => { prefOf[p.user_id] = p; });
@@ -87,7 +88,7 @@ export async function GET(request: Request) {
             if (!host) continue;
 
             const pref = prefOf[host.id];
-            if (pref && pref.marketing === false) continue; // opted out of nudges
+            if (pref && pref.listing_reminders === false) continue; // opted out
 
             const rows = [{ listing_id: p.listingId, kind: p.kind }];
             if (p.alsoClaim) rows.push({ listing_id: p.listingId, kind: p.alsoClaim });
@@ -97,7 +98,7 @@ export async function GET(request: Request) {
             const copy = draftReminderCopy(p.kind, draft.title);
             const name = escapeHtml(greetingName(host, 'there'));
             const unsubscribe = pref && pref.unsubscribe_token
-                ? SITE_URL + '/unsubscribe?token=' + pref.unsubscribe_token + '&type=marketing'
+                ? SITE_URL + '/unsubscribe?token=' + pref.unsubscribe_token + '&type=listing_reminders'
                 : undefined;
             const ok = await sendEmail(
                 host.email,

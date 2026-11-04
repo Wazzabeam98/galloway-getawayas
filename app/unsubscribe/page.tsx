@@ -22,6 +22,7 @@ const COLUMNS: Record<string, string> = {
     new_message: 'message alerts',
     booking_reminders: 'trip reminders',
     review_prompts: 'review reminders',
+    listing_reminders: 'listing reminders',
     marketing: 'news and offers',
 };
 
