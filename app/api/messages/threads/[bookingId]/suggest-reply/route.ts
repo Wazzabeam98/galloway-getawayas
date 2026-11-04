@@ -172,7 +172,7 @@ export async function POST(_request: Request, { params }: { params: { bookingId:
         let draft: { reply: string; unconfirmed: string[] } | null = null;
         if (response.stop_reason !== 'refusal') {
             const text = response.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('');
-            draft = parseDraft(text);
+            draft = parseDraft(text, hostFirst);
         }
         await logUsage(admin, {
             userId: uid, bookingId: booking.id, model: REPLY_MODEL, inputTokens: inTok, outputTokens: outTok, costUsd: cost,
