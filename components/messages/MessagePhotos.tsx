@@ -161,7 +161,7 @@ function PhotoViewer({
     const a = attachments[index];
     return (
         <div
-            className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center"
+            className="fixed inset-0 z-[100] bg-black flex items-center justify-center"
             role="dialog"
             aria-modal="true"
             aria-label="Photo"
