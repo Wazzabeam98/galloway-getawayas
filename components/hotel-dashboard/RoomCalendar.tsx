@@ -156,14 +156,14 @@ export default function RoomCalendar({ hotels, rooms }: { hotels: Hotel[]; rooms
                             const selected = selectedKeys.includes(c.key);
                             return (
                                 <button key={c.key} type="button" disabled={isPast} onClick={() => tapDay(c.key)}
-                                    className={`relative aspect-square rounded-lg border text-left p-1.5 transition
+                                    className={`flex flex-col min-h-[58px] sm:min-h-[76px] rounded-lg border text-left p-1.5 transition
                                         ${!c.inMonth ? 'opacity-40' : ''}
                                         ${isPast ? 'bg-slate-50 text-slate-300 cursor-default border-slate-100' :
                                           selected ? 'border-emerald-700 bg-emerald-50 ring-1 ring-emerald-700' :
                                           blocked ? 'border-slate-200 bg-slate-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
                                     <span className={`text-xs ${isPast ? '' : 'text-slate-700'}`}>{c.date.getDate()}</span>
-                                    {!isPast && data && (
-                                        <span className="absolute bottom-1 left-1.5 right-1.5">
+                                    {!isPast && c.inMonth && data && (
+                                        <span className="mt-auto leading-tight">
                                             {blocked ? (
                                                 <span className="text-[10px] font-semibold text-slate-400">Closed</span>
                                             ) : (
