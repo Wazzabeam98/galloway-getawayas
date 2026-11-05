@@ -20,7 +20,7 @@ import PropertyTypePicker from '@/components/PropertyTypePicker';
 import { addressLineLabel, isSiteType } from '@/lib/propertyTypes';
 import Env from '@/config/Env';
 import { compressImage, readImageDimensions } from '@/lib/compressImage';
-import { photoDimensionProblem, GALLERY_CROP_ASPECT, CARD_CROP_ASPECT } from '@/lib/photoRules';
+import { tinyImageProblem, GALLERY_CROP_ASPECT, CARD_CROP_ASPECT } from '@/lib/photoRules';
 import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { DEFAULT_COMMISSION_PERCENT, feeAmount, netOfFee } from '@/lib/fees';
@@ -40,6 +40,33 @@ import {
     fromRow as listingFromRow,
     NEW_LISTING_MIN_PHOTOS,
 } from '@/lib/listingRules';
+
+// Record a photo the wizard rejected or could not read, so we can see whether
+// hosts are being blocked at the photos step. Best-effort to /api/errors/report
+// (the client-safe writer to error_log, rate-limited) — never blocks the host.
+function logPhotoIssue(reason: string, file: File, size: { width: number; height: number } | null, err?: unknown) {
+    try {
+        const detail = {
+            reason,
+            size: ((size && size.width) || 0) + '×' + ((size && size.height) || 0),
+            type: file.type || 'unknown',
+            name: file.name,
+            bytes: file.size,
+            userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+            error: err ? String((err as any)?.message || err).slice(0, 300) : undefined,
+        };
+        fetch('/api/errors/report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message: 'addhome: photo ' + reason.split(':')[0] + ' at the photos step',
+                detail: JSON.stringify(detail),
+                path: 'addhome/photos',
+            }),
+            keepalive: true,
+        }).catch(() => { /* a logger that fails must not surface */ });
+    } catch { /* never block the host on logging */ }
+}
 
 export default function AddHome() {
     const [loading, setLoading] = useState(true);
@@ -467,6 +494,9 @@ export default function AddHome() {
         try { window.localStorage.setItem('gg.addhome.step.' + draftId, String(step)); } catch { /* ignore */ }
     }, [draftId, step]);
 
+    // Every Next and Back opens the new step scrolled to the top of the page.
+    useEffect(() => { try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch { /* ignore */ } }, [step]);
+
     // Make the browser/phone Back gesture step back through the wizard instead
     // of leaving it in one jump. We keep one spare history entry on top; a Back
     // press pops it, we step back a page and push the spare again, so the depth
@@ -534,16 +564,23 @@ export default function AddHome() {
         let heicUnreadable = 0;
         for (const file of files) {
             // Refuse a photo that is too small to look sharp before it is
-            // compressed or uploaded (lib/photoRules). A size we can't read
-            // (0 \u00d7 0) is let through rather than blocked on a reader quirk.
+            // compressed or uploaded (lib/photoRules). The floor is now the
+            // lenient one \u2014 only genuinely tiny images are blocked. A size we
+            // can't read (0 \u00d7 0) is let through rather than blocked on a
+            // reader quirk, but it is logged so we can see read failures.
             const size = await readImageDimensions(file);
             if (size.width && size.height) {
-                const problem = photoDimensionProblem(size.width, size.height);
+                const problem = tinyImageProblem(size.width, size.height);
                 if (problem) {
                     tooSmall += 1;
                     setFormError(problem);
+                    logPhotoIssue('rejected: too small', file, size);
                     continue;
                 }
+            } else {
+                // Could not read the dimensions \u2014 the host is not blocked, but
+                // this is exactly the "stuck at the photos step" signal to catch.
+                logPhotoIssue('could not read dimensions', file, size);
             }
             let ready: File;
             try {
@@ -554,6 +591,7 @@ export default function AddHome() {
                 // the blank "couldn't be read".
                 if (isHeic(file)) heicUnreadable += 1;
                 else setFormError('One of those photos couldn\u2019t be read. Try a different one.');
+                logPhotoIssue(isHeic(file) ? 'could not read: HEIC not decodable in this browser' : 'could not read: compress failed', file, size, err);
                 continue;
             }
             const path = Date.now() + '_' + generateRandomNumber();
@@ -900,6 +938,17 @@ export default function AddHome() {
                         </button>
                     </div>
                 </div>
+
+                {/* Back at the top-left on desktop, to match the hotel wizard
+                    (a phone has the sticky Back bar above). Next stays at the
+                    foot, bottom-right. */}
+                <button
+                    type="button"
+                    onClick={goBack}
+                    className="hidden sm:inline-flex items-center gap-1 mb-4 text-sm font-semibold text-slate-700 hover:text-black"
+                >
+                    <ChevronLeftIcon className="w-4 h-4" /> Back
+                </button>
 
                 {/* Progress bar */}
                 <div className="flex space-x-1 mb-10">
@@ -1476,16 +1525,11 @@ export default function AddHome() {
 
                 {formError && step !== TOTAL_STEPS && <p className="text-red-600 text-sm mt-6">{formError}</p>}
 
-                {/* Nav buttons (all steps except the last, which has its own submit button above) */}
+                {/* Nav buttons (all steps except the last, which has its own submit
+                    button above). Back is at the top-left now, so the foot holds
+                    only Next, bottom-right. */}
                 {step !== TOTAL_STEPS && (
                     <div className="flex items-center gap-3 mt-10 pt-6 border-t">
-                        <button
-                            type="button"
-                            onClick={goBack}
-                            className="hidden sm:flex items-center text-sm font-semibold text-slate-700 hover:text-black"
-                        >
-                            <ChevronLeftIcon className="w-4 h-4 mr-1" /> Back
-                        </button>
                         {/* The photos step promises "at least 5", so Next greys until
                             there are five — the warning says what's short, bottom-left,
                             the same greyed-Next pattern the provider sign-up uses. The
@@ -1523,15 +1567,6 @@ export default function AddHome() {
                 {/* The first screen is where a new host is still deciding, so the
                     questions they ask sit under it — not on the later steps. */}
                 {step === 1 && <RecruitFaq audience="host" className="mt-16 pb-8" />}
-                {step === TOTAL_STEPS && (
-                    <button
-                        type="button"
-                        onClick={goBack}
-                        className="hidden sm:flex items-center text-sm font-semibold text-slate-700 hover:text-black mt-6"
-                    >
-                        <ChevronLeftIcon className="w-4 h-4 mr-1" /> Back
-                    </button>
-                )}
             </div>
         );
     }
