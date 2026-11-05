@@ -26,6 +26,23 @@ export function photoDimensionProblem(width: number, height: number): string | n
     return null;
 }
 
+// A LENIENT floor that blocks only GENUINELY tiny images (thumbnails, icons).
+// The strict rule above (1024×683) rejected a 1024×682 photo by one pixel, which
+// was blocking hosts for no good reason; this accepts anything that is plausibly
+// a real photo. Same shape as photoDimensionProblem. Used by the /addhome wizard
+// (and the hotel wizard).
+export const TINY_PHOTO_LONG_EDGE = 640;
+export const TINY_PHOTO_SHORT_EDGE = 426;
+export function tinyImageProblem(width: number, height: number): string | null {
+    const long = Math.max(width, height);
+    const short = Math.min(width, height);
+    if (!(long >= TINY_PHOTO_LONG_EDGE && short >= TINY_PHOTO_SHORT_EDGE)) {
+        return 'That image is ' + width + ' × ' + height + ' pixels — too small to use. '
+            + 'Please add a larger photo.';
+    }
+    return null;
+}
+
 // THE CROPS A GUEST ACTUALLY SEES, so the editor can show a photo cropped the
 // way it will really appear rather than in some arbitrary tile.
 //
