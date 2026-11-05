@@ -265,21 +265,29 @@ export function arrivalSecretsWindowOpen(
 ): boolean {
     const { phase } = stayCountdown(b, now);
     if (phase === 'over') return false;
+    return now.getTime() >= arrivalSecretsReleaseAt(b, release, checkInTime).getTime();
+}
+
+/**
+ * The moment the door code and wifi password are shown to a guest — the instant
+ * arrivalSecretsWindowOpen opens at, so anything that names the time (an AI
+ * reply draft) says exactly what the arrival page will do.
+ */
+export function arrivalSecretsReleaseAt(
+    b: { check_in: string },
+    release: number | CodeReleaseSetting = DEFAULT_CODE_RELEASE_HOURS,
+    checkInTime?: string | null,
+): Date {
     const setting = asReleaseSetting(release);
     const checkInKey = String(b.check_in).slice(0, 10);
-
-    let openFrom: number;
     if (setting.releaseAtTime) {
         // An absolute clock time on the check-in day, whatever the check-in
         // time is. The host chose this instant outright.
         const parts = setting.releaseAtTime.split(':');
-        openFrom = londonInstant(checkInKey, Number(parts[0]), Number(parts[1])).getTime();
-    } else {
-        // `releaseHours` before the check-in instant (0 = exactly at it).
-        openFrom = londonInstant(checkInKey, checkInHour(checkInTime)).getTime()
-            - setting.releaseHours * 3_600_000;
+        return londonInstant(checkInKey, Number(parts[0]), Number(parts[1]));
     }
-    return now.getTime() >= openFrom;
+    // `releaseHours` before the check-in instant (0 = exactly at it).
+    return new Date(londonInstant(checkInKey, checkInHour(checkInTime)).getTime() - setting.releaseHours * 3_600_000);
 }
 
 // Would a scheduled message carrying {lockbox_code} be held back because it is
