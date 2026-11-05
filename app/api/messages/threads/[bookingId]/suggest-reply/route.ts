@@ -177,14 +177,20 @@ export async function POST(_request: Request, { params }: { params: { bookingId:
         }
 
         const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 30_000 });
-        let response: Anthropic.Message;
+        let response: Anthropic.Beta.BetaMessage;
         try {
-            response = await client.messages.create({
+            // The instructions and site knowledge are the same on every call, so
+            // they are cached (reads bill at a tenth). Server-side fallback is the
+            // recommended default for this model: it re-runs a declined request on
+            // another model in the same call, and costs nothing when unused.
+            response = await client.beta.messages.create({
                 model: REPLY_MODEL,
                 max_tokens: 4000,
-                system: REPLY_SYSTEM,
+                system: [{ type: 'text', text: REPLY_SYSTEM, cache_control: { type: 'ephemeral' } }],
                 messages: [{ role: 'user', content: replyPrompt(input, rules) }],
                 output_config: { effort: 'low', format: { type: 'json_schema', schema: REPLY_SCHEMA as any } },
+                betas: ['server-side-fallback-2026-07-01'],
+                fallbacks: 'default',
             });
         } catch (err) {
             await logUsage(admin, { userId: uid, bookingId: booking.id, model: REPLY_MODEL, inputTokens: 0, outputTokens: 0, costUsd: 0, outcome: 'api_error', fake: false });
@@ -199,23 +205,27 @@ export async function POST(_request: Request, { params }: { params: { bookingId:
             return NextResponse.json({ ok: false, error: 'Couldn’t draft a reply. Try again.' }, { status: 502 });
         }
 
-        const inTok = Number(response.usage && response.usage.input_tokens) || 0;
-        const outTok = Number(response.usage && response.usage.output_tokens) || 0;
-        const cost = costUsd(inTok, outTok, REPLY_MODEL);
+        const usage: any = response.usage || {};
+        const inTok = Number(usage.input_tokens) || 0;
+        const outTok = Number(usage.output_tokens) || 0;
+        const cacheWrite = Number(usage.cache_creation_input_tokens) || 0;
+        const cacheRead = Number(usage.cache_read_input_tokens) || 0;
+        const usedModel = String(response.model || REPLY_MODEL);
+        const cost = costUsd(inTok, outTok, usedModel, cacheWrite, cacheRead);
 
         let draft: { reply: string; unconfirmed: string[] } | null = null;
         if (response.stop_reason !== 'refusal') {
-            const text = response.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('');
+            const text = response.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text').map((b) => b.text).join('');
             draft = parseDraft(text, hostFirst);
         }
         await logUsage(admin, {
-            userId: uid, bookingId: booking.id, model: REPLY_MODEL, inputTokens: inTok, outputTokens: outTok, costUsd: cost,
+            userId: uid, bookingId: booking.id, model: usedModel, inputTokens: inTok + cacheWrite + cacheRead, outputTokens: outTok, costUsd: cost,
             outcome: response.stop_reason === 'refusal' ? 'refusal' : draft ? 'ok' : 'unparsed', fake: false,
         });
         await alertIfNeeded(admin, spent + cost, cap);
 
         if (!draft) return NextResponse.json({ ok: false, error: 'Couldn’t draft a reply for this one — write it yourself.' }, { status: 422 });
-        return NextResponse.json({ ok: true, model: REPLY_MODEL, ...draft });
+        return NextResponse.json({ ok: true, model: usedModel, ...draft });
     } catch (err) {
         await logError('[ai-reply] failed', err, { path: 'ai-reply' });
         return NextResponse.json({ ok: false, error: 'Couldn’t draft a reply. Try again.' }, { status: 500 });

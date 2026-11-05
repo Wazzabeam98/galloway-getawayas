@@ -27,10 +27,16 @@ import { isSelfCheckIn, checkInBlurb } from './checkInMethods';
 export const MODEL_PRICES: Record<string, { input: number; output: number }> = {
     'claude-haiku-5-5': { input: 0.10, output: 0.50 },
     'claude-sonnet-5-5': { input: 2.00, output: 10.00 },
+    'claude-sonnet-5': { input: 2.00, output: 10.00 },
 };
 
-/** The model the drafts use. */
-export const REPLY_MODEL = 'claude-haiku-5-5';
+/**
+ * The model the drafts use. Claude Sonnet 5.5 (5 November 2026): on the same 20
+ * guest questions Haiku 5.5 still invented details (a cot space, "the
+ * neighbours are close by", a wrong cancellation date) and Sonnet did not.
+ * About 1p a draft against Haiku's 0.05p.
+ */
+export const REPLY_MODEL = 'claude-sonnet-5-5';
 
 /** Drafts a host may ask for: per hour, and per day. */
 export const HOURLY_LIMIT = 20;
@@ -42,9 +48,15 @@ export const DEFAULT_MONTHLY_CAP_USD = 20;
 /** How many of the latest messages the draft reads. */
 export const MESSAGES_READ = 30;
 
-export function costUsd(inputTokens: number, outputTokens: number, model: string = REPLY_MODEL): number {
-    const price = MODEL_PRICES[model] || MODEL_PRICES[REPLY_MODEL];
-    const c = (Math.max(0, inputTokens || 0) * price.input + Math.max(0, outputTokens || 0) * price.output) / 1_000_000;
+/**
+ * What a call cost. Cache writes bill at 1.25x the input price and cache reads
+ * at 0.1x; plain input and output at list. A model not in the table is priced
+ * as the dearest one known, so an unexpected fallback never under-counts.
+ */
+export function costUsd(inputTokens: number, outputTokens: number, model: string = REPLY_MODEL, cacheWriteTokens = 0, cacheReadTokens = 0): number {
+    const price = MODEL_PRICES[model] || Object.values(MODEL_PRICES).reduce((a, b) => (b.input > a.input ? b : a));
+    const n = (x: number) => Math.max(0, x || 0);
+    const c = (n(inputTokens) * price.input + n(cacheWriteTokens) * price.input * 1.25 + n(cacheReadTokens) * price.input * 0.1 + n(outputTokens) * price.output) / 1_000_000;
     return Math.round(c * 1_000_000) / 1_000_000;
 }
 
@@ -219,8 +231,13 @@ export function factsFor(input: ReplyInput, rules: ShareRules, now: Date = new D
     }
     add('Other house rules', l.additional_rules);
     if (l.guest_safety && typeof l.guest_safety === 'object' && Object.keys(l.guest_safety).length) add('Safety notes', JSON.stringify(l.guest_safety));
-    if (Array.isArray(l.checkout_tasks) && l.checkout_tasks.length) add('Before leaving (checkout tasks)', l.checkout_tasks.map((t: any) => (typeof t === 'string' ? t : t && (t.label || t.text || t.title))).filter(Boolean).join('; '));
-    add('Checkout note', l.checkout_note);
+    const tasks = Array.isArray(l.checkout_tasks) ? l.checkout_tasks.map((t: any) => (typeof t === 'string' ? t : t && (t.label || t.text || t.title))).filter(Boolean) : [];
+    if (tasks.length || clean(l.checkout_note)) {
+        if (tasks.length) add('Before leaving (checkout tasks, also on the trip page)', tasks.join('; '));
+        add('Checkout note', l.checkout_note);
+    } else {
+        lines.push('Before leaving: the host has set no checkout tasks or note.');
+    }
     if (input.extras && input.extras.length) {
         add('Extras the host offers (chosen when booking)', input.extras.map((x) => x.label + ' £' + Number(x.price).toFixed(2) + ' per ' + x.unit + (x.description ? ' (' + clean(x.description, 200) + ')' : '')).join('; '));
     } else {
@@ -289,7 +306,7 @@ export const SITE_KNOWLEDGE = [
     '- Cancelling: the guest cancels from "Cancel reservation" on the trip page, any time before check-in day; from check-in day they message the host. Refunds follow the booking\'s own cancellation terms (in the facts) and go back to the card used, usually within 5 to 10 working days. The cleaning fee is refunded whenever any refund is due, unless it is a non-refundable rate.',
     '- Changing dates or guest numbers: "Request a change" on the trip page. If the price is the same it goes through straight away; if it changes, the host approves it and the guest pays any difference (or is refunded what they overpaid). It is subject to the dates being free.',
     '- Extras (the host\'s own add-ons in the facts) are chosen when booking; they cannot be added to a booking in the app afterwards, so if a guest asks for one now, the host arranges it directly.',
-    '- Checkout instructions and house rules are on the trip page. Problems the host can\'t solve: support@gallowaygetaways.co.uk.',
+    '- Any checkout tasks the host has set, and the house rules, are on the trip page. Problems the host can\'t solve: support@gallowaygetaways.co.uk.',
     '- Local experiences (chefs, saunas, guides) from independent providers can be booked under Experiences in the app.',
 ].join('\n');
 
