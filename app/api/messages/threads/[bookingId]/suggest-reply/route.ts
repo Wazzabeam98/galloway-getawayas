@@ -10,10 +10,13 @@ import { firstName, formatTime, hostByline } from '@/lib/utils';
 import { revealSecret } from '@/lib/listingSecrets';
 import { renderSecretTokens } from '@/lib/messageSecrets';
 import { messagePreview } from '@/lib/messagePhotos';
-import { normaliseReleaseSetting, DEFAULT_CODE_RELEASE_HOURS } from '@/lib/bookingWindows';
+import { normaliseReleaseSetting, DEFAULT_CODE_RELEASE_HOURS, arrivalSecretsReleaseAt } from '@/lib/bookingWindows';
+import { cancellationWords } from '@/lib/bookingDisplay';
+import { cancellationPosition } from '@/lib/cancellationView';
+import { londonDayKey } from '@/lib/dayKey';
 import {
     REPLY_MODEL, REPLY_SYSTEM, REPLY_SCHEMA, HOURLY_LIMIT, DAILY_LIMIT, MESSAGES_READ,
-    costUsd, shareRules, replyPrompt, parseDraft, standInDraft, type ReplyInput,
+    costUsd, shareRules, replyPrompt, parseDraft, standInDraft, proseDate, type ReplyInput,
 } from '@/lib/replySuggest';
 import { aiReplySuggestionsOn, hasApiKey, spentThisMonth, capUsd, alertIfNeeded, logUsage } from '@/lib/aiReplyServer';
 
@@ -41,7 +44,7 @@ export async function POST(_request: Request, { params }: { params: { bookingId:
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, status, payment_status, guests, adults, children, pets')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, status, payment_status, guests, adults, children, pets, amount_paid, total_price, amount_refunded, balance_amount, balance_due_date, cleaning_fee, cancellation_policy, cancellation_custom_days, non_refundable')
             .eq('id', params.bookingId)
             .maybeSingle();
         if (!booking) return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
@@ -73,7 +76,7 @@ export async function POST(_request: Request, { params }: { params: { bookingId:
         // --- What the draft may be told -----------------------------------
         const { data: listing } = await admin
             .from('listings')
-            .select('title, description, location, property_type, max_guests, bedrooms, beds, bathrooms, amenities, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, max_pets, checkout_tasks, checkout_note, neighbourhood, street_address, postcode, host_id')
+            .select('title, description, location, property_type, max_guests, bedrooms, beds, bathrooms, amenities, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, max_pets, pet_fee, checkout_tasks, checkout_note, neighbourhood, nearby, sleeping_arrangements, guest_safety, pool_access, street_address, postcode, host_id')
             .eq('id', booking.listing_id)
             .maybeSingle();
 
@@ -88,7 +91,7 @@ export async function POST(_request: Request, { params }: { params: { bookingId:
         let doorCode: string | null = null;
         let wifiPassword: string | null = null;
         if (rules.address || rules.secrets) {
-            const { data: arr } = await admin.from('listing_arrival').select('arrival_directions, parking_info, wifi_name, wifi_password').eq('listing_id', booking.listing_id).maybeSingle();
+            const { data: arr } = await admin.from('listing_arrival').select('arrival_directions, what3words, wifi_name, wifi_password').eq('listing_id', booking.listing_id).maybeSingle();
             arrival = arr;
         }
         if (rules.secrets) {
@@ -102,11 +105,12 @@ export async function POST(_request: Request, { params }: { params: { bookingId:
             wifiPassword = (arrival && arrival.wifi_password && await revealSecret(arrival.wifi_password, { table: 'listing_arrival', id: booking.listing_id }, where)) || null;
         }
 
-        const [{ data: guestP }, { data: hostP }, { data: msgs }] = await Promise.all([
+        const [{ data: guestP }, { data: hostP }, { data: msgs }, { data: extras }] = await Promise.all([
             admin.from('profiles').select('full_name, first_name, last_name, preferred_name, show_full_name').eq('id', booking.guest_id).maybeSingle(),
             admin.from('profiles').select('full_name, first_name, last_name, preferred_name, show_full_name').eq('id', uid).maybeSingle(),
             admin.from('messages').select('sender_id, body, created_at, automated, photo_count')
                 .eq('booking_id', booking.id).order('created_at', { ascending: false }).limit(MESSAGES_READ),
+            admin.from('listing_extras').select('label, description, price, unit').eq('listing_id', booking.listing_id).eq('active', true).order('sort_order'),
         ]);
         const guestFirst = firstName(guestP, 'there');
         const hostFirst = hostByline(hostP, null, 'the host');
@@ -122,7 +126,37 @@ export async function POST(_request: Request, { params }: { params: { bookingId:
             booking,
             address: rules.address && listing ? [listing.street_address, listing.postcode, listing.location].filter(Boolean).join(', ') : null,
             arrivalDirections: rules.address ? (arrival && arrival.arrival_directions) || null : null,
-            parking: rules.address ? (arrival && arrival.parking_info) || null : null,
+            what3words: rules.address ? (arrival && arrival.what3words) || null : null,
+            payment: {
+                status: booking.payment_status || null,
+                paid: booking.amount_paid != null ? Math.round((Number(booking.amount_paid) - Number(booking.amount_refunded || 0)) * 100) / 100 : null,
+                total: booking.total_price != null ? Number(booking.total_price) : null,
+                balance: booking.balance_amount != null ? Number(booking.balance_amount) : null,
+                balanceDue: booking.balance_due_date ? String(booking.balance_due_date).slice(0, 10) : null,
+            },
+            cancellation: (() => {
+                const cw = cancellationWords(booking.cancellation_policy, booking.cancellation_custom_days);
+                // The trip page's own sum (lib/cancellationView): what cancelling
+                // TODAY would refund, so the draft never does date arithmetic.
+                const pos = cancellationPosition({
+                    checkIn: String(booking.check_in).slice(0, 10),
+                    policy: booking.cancellation_policy || null,
+                    customDays: booking.cancellation_custom_days,
+                    nonRefundable: booking.non_refundable === true,
+                    amountPaid: Number(booking.amount_paid || 0),
+                    alreadyRefunded: Number(booking.amount_refunded || 0),
+                    cleaningFee: booking.cleaning_fee,
+                });
+                return {
+                    summary: cw.summary,
+                    freeUntil: pos.kind === 'free' && pos.freeUntilKey ? proseDate(pos.freeUntilKey) : null,
+                    nonRefundable: booking.non_refundable === true,
+                    ifCancelledToday: { kind: pos.kind, refund: Number(pos.amount) || 0, paid: Number(pos.paidSoFar) || 0 },
+                    startsToday: String(booking.check_in).slice(0, 10) <= londonDayKey(new Date()),
+                };
+            })(),
+            secretsReleaseAt: arrivalSecretsReleaseAt(booking, release, listing && listing.check_in_time),
+            extras: (extras || []).map((x: any) => ({ label: x.label, description: x.description, price: Number(x.price) || 0, unit: x.unit || 'stay' })),
             doorCode: rules.secrets ? doorCode : null,
             wifiName: rules.secrets ? (arrival && arrival.wifi_name) || null : null,
             wifiPassword: rules.secrets ? wifiPassword : null,
@@ -143,14 +177,20 @@ export async function POST(_request: Request, { params }: { params: { bookingId:
         }
 
         const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 30_000 });
-        let response: Anthropic.Message;
+        let response: Anthropic.Beta.BetaMessage;
         try {
-            response = await client.messages.create({
+            // The instructions and site knowledge are the same on every call, so
+            // they are cached (reads bill at a tenth). Server-side fallback is the
+            // recommended default for this model: it re-runs a declined request on
+            // another model in the same call, and costs nothing when unused.
+            response = await client.beta.messages.create({
                 model: REPLY_MODEL,
                 max_tokens: 4000,
-                system: REPLY_SYSTEM,
+                system: [{ type: 'text', text: REPLY_SYSTEM, cache_control: { type: 'ephemeral' } }],
                 messages: [{ role: 'user', content: replyPrompt(input, rules) }],
                 output_config: { effort: 'low', format: { type: 'json_schema', schema: REPLY_SCHEMA as any } },
+                betas: ['server-side-fallback-2026-07-01'],
+                fallbacks: 'default',
             });
         } catch (err) {
             await logUsage(admin, { userId: uid, bookingId: booking.id, model: REPLY_MODEL, inputTokens: 0, outputTokens: 0, costUsd: 0, outcome: 'api_error', fake: false });
@@ -165,23 +205,27 @@ export async function POST(_request: Request, { params }: { params: { bookingId:
             return NextResponse.json({ ok: false, error: 'Couldn’t draft a reply. Try again.' }, { status: 502 });
         }
 
-        const inTok = Number(response.usage && response.usage.input_tokens) || 0;
-        const outTok = Number(response.usage && response.usage.output_tokens) || 0;
-        const cost = costUsd(inTok, outTok);
+        const usage: any = response.usage || {};
+        const inTok = Number(usage.input_tokens) || 0;
+        const outTok = Number(usage.output_tokens) || 0;
+        const cacheWrite = Number(usage.cache_creation_input_tokens) || 0;
+        const cacheRead = Number(usage.cache_read_input_tokens) || 0;
+        const usedModel = String(response.model || REPLY_MODEL);
+        const cost = costUsd(inTok, outTok, usedModel, cacheWrite, cacheRead);
 
         let draft: { reply: string; unconfirmed: string[] } | null = null;
         if (response.stop_reason !== 'refusal') {
-            const text = response.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('');
+            const text = response.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text').map((b) => b.text).join('');
             draft = parseDraft(text, hostFirst);
         }
         await logUsage(admin, {
-            userId: uid, bookingId: booking.id, model: REPLY_MODEL, inputTokens: inTok, outputTokens: outTok, costUsd: cost,
+            userId: uid, bookingId: booking.id, model: usedModel, inputTokens: inTok + cacheWrite + cacheRead, outputTokens: outTok, costUsd: cost,
             outcome: response.stop_reason === 'refusal' ? 'refusal' : draft ? 'ok' : 'unparsed', fake: false,
         });
         await alertIfNeeded(admin, spent + cost, cap);
 
         if (!draft) return NextResponse.json({ ok: false, error: 'Couldn’t draft a reply for this one — write it yourself.' }, { status: 422 });
-        return NextResponse.json({ ok: true, ...draft });
+        return NextResponse.json({ ok: true, model: usedModel, ...draft });
     } catch (err) {
         await logError('[ai-reply] failed', err, { path: 'ai-reply' });
         return NextResponse.json({ ok: false, error: 'Couldn’t draft a reply. Try again.' }, { status: 500 });
