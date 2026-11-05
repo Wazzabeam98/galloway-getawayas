@@ -13,6 +13,7 @@ import { messagePreview } from '@/lib/messagePhotos';
 import { normaliseReleaseSetting, DEFAULT_CODE_RELEASE_HOURS, arrivalSecretsReleaseAt } from '@/lib/bookingWindows';
 import { cancellationWords } from '@/lib/bookingDisplay';
 import { cancellationPosition } from '@/lib/cancellationView';
+import { londonDayKey } from '@/lib/dayKey';
 import {
     REPLY_MODEL, REPLY_SYSTEM, REPLY_SCHEMA, HOURLY_LIMIT, DAILY_LIMIT, MESSAGES_READ,
     costUsd, shareRules, replyPrompt, parseDraft, standInDraft, proseDate, type ReplyInput,
@@ -43,7 +44,7 @@ export async function POST(_request: Request, { params }: { params: { bookingId:
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, status, payment_status, guests, adults, children, pets, amount_paid, total_price, amount_refunded, balance_amount, balance_due_date, cancellation_policy, cancellation_custom_days, non_refundable')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, status, payment_status, guests, adults, children, pets, amount_paid, total_price, amount_refunded, balance_amount, balance_due_date, cleaning_fee, cancellation_policy, cancellation_custom_days, non_refundable')
             .eq('id', params.bookingId)
             .maybeSingle();
         if (!booking) return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
@@ -135,16 +136,23 @@ export async function POST(_request: Request, { params }: { params: { bookingId:
             },
             cancellation: (() => {
                 const cw = cancellationWords(booking.cancellation_policy, booking.cancellation_custom_days);
+                // The trip page's own sum (lib/cancellationView): what cancelling
+                // TODAY would refund, so the draft never does date arithmetic.
                 const pos = cancellationPosition({
                     checkIn: String(booking.check_in).slice(0, 10),
                     policy: booking.cancellation_policy || null,
                     customDays: booking.cancellation_custom_days,
                     nonRefundable: booking.non_refundable === true,
+                    amountPaid: Number(booking.amount_paid || 0),
+                    alreadyRefunded: Number(booking.amount_refunded || 0),
+                    cleaningFee: booking.cleaning_fee,
                 });
                 return {
                     summary: cw.summary,
                     freeUntil: pos.kind === 'free' && pos.freeUntilKey ? proseDate(pos.freeUntilKey) : null,
                     nonRefundable: booking.non_refundable === true,
+                    ifCancelledToday: { kind: pos.kind, refund: Number(pos.amount) || 0, paid: Number(pos.paidSoFar) || 0 },
+                    startsToday: String(booking.check_in).slice(0, 10) <= londonDayKey(new Date()),
                 };
             })(),
             secretsReleaseAt: arrivalSecretsReleaseAt(booking, release, listing && listing.check_in_time),
