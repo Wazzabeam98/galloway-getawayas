@@ -35,6 +35,10 @@ const ALLOWED: Record<string, { roles: Role[]; reason: string }> = {
         roles: ['authenticated'],
         reason: 'booking message-thread row policies for co-hosts with messages; answers only about auth.uid()',
     },
+    'has_hotel_permission(uuid,text)': {
+        roles: ['authenticated'],
+        reason: 'hotel row policies (hotels + hotel_room_types owner/co-host SELECT) and the hotel_private view — mirrors lib/hotelAccess checkHotel; answers only about auth.uid()',
+    },
     'has_provider_permission(uuid,text)': {
         roles: ['authenticated'],
         reason: 'co-host row policies on a business (provider tables, slot diary, enquiries, order/enquiry messages, review replies) — mirrors lib/providerAccess checkProvider; answers only about auth.uid()',
@@ -112,38 +116,12 @@ test('the migration fixes the root cause: postgres default privileges drop the b
     assert.match(MIGRATION, /alter default privileges for role postgres in schema public revoke execute on functions from public, anon, authenticated;/);
 });
 
-// ON TEST FROM A BRANCH THAT HAS NOT MERGED. TEST is shared, so a branch that
-// applies its migration there (as it should, to be walked on its preview) puts
-// its functions in front of master's live check before master has the
-// migration. ALLOWED cannot name them — its static check insists every entry is
-// granted by a migration on this branch, and master doesn't have it yet.
-//
-// This is the exception for exactly that, and nothing else (Liam, 4 November
-// 2026). It holds one function. The live check still insists its grants are
-// exactly the roles written here. And it removes itself loudly: the moment the
-// branch's migration is on this checkout (the branch has merged, or you are on
-// it), the test below fails and says to move the entry into ALLOWED and delete
-// it from here — so it can never quietly become permanent.
-const ON_TEST_FROM_UNMERGED_BRANCH: Record<string, { roles: Role[]; branch: string; migration: string; reason: string }> = {
-    'has_hotel_permission(uuid,text)': {
-        roles: ['authenticated'],
-        branch: 'feat/hotels',
-        migration: '20261104070128_hotels_phase_one_tables.sql',
-        reason: 'hotel row policies (hotels + hotel_room_types owner/co-host SELECT) — mirrors lib/hotelAccess checkHotel; answers only about auth.uid(). Applied to TEST only; hotels stay off master until Liam says',
-    },
-};
-
-test('the unmerged-branch exception holds only has_hotel_permission, and goes as soon as its branch merges', () => {
-    assert.deepEqual(Object.keys(ON_TEST_FROM_UNMERGED_BRANCH), ['has_hotel_permission(uuid,text)'],
-        'this exception is for has_hotel_permission alone — a decision about any other function goes in ALLOWED');
-    const here = new Set(fs.readdirSync(path.join(ROOT, 'supabase/migrations')));
-    for (const [fn, e] of Object.entries(ON_TEST_FROM_UNMERGED_BRANCH)) {
-        assert.ok(!(fn in ALLOWED), fn + ' is in ALLOWED now — delete it from ON_TEST_FROM_UNMERGED_BRANCH');
-        assert.ok(!here.has(e.migration),
-            e.branch + '\'s migration ' + e.migration + ' is on this branch, so the exception has done its job: move '
-            + fn + ' into ALLOWED (with its grant in the migration) and DELETE it from ON_TEST_FROM_UNMERGED_BRANCH.');
-    }
-});
+// (#527 added an ON_TEST_FROM_UNMERGED_BRANCH exception on master so master's
+// live guard would tolerate has_hotel_permission appearing on shared TEST before
+// the hotel migration was on master. It is removed HERE on purpose: feat/hotels
+// carries migration 20261104070128, so the function is granted by a migration on
+// this branch and is decided in ALLOWED above — which is exactly what that
+// exception's own self-check instructed once its migration is on the checkout.)
 
 // DB half — the gate. Reads the live TEST grants, so a function created later
 // that nobody decided about fails by name.
@@ -170,13 +148,6 @@ test('no public function is executable by anon or authenticated unless it is on 
 
         const problems: string[] = [];
         for (const r of rows) {
-            const branchOnly = ON_TEST_FROM_UNMERGED_BRANCH[r.sig];
-            if (branchOnly) {
-                // Exactly the roles written down — no more, no fewer.
-                if (!!r.anon !== branchOnly.roles.includes('anon')) problems.push(r.sig + ' — anon grant differs from ON_TEST_FROM_UNMERGED_BRANCH');
-                if (!!r.authd !== branchOnly.roles.includes('authenticated')) problems.push(r.sig + ' — authenticated grant differs from ON_TEST_FROM_UNMERGED_BRANCH');
-                continue;
-            }
             const allowed = ALLOWED[r.sig];
             if (r.anon && !(allowed && allowed.roles.includes('anon'))) problems.push(r.sig + ' — executable by anon');
             if (r.authd && !(allowed && allowed.roles.includes('authenticated'))) problems.push(r.sig + ' — executable by authenticated');

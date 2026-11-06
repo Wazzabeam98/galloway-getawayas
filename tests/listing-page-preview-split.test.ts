@@ -60,7 +60,7 @@ test('the preview route is per-request and lets in only owner, co-host with list
 });
 
 test('the links to a not-yet-public listing open its preview', () => {
-    assert.match(read('app/dashboard/page.tsx'), /\{isWaiting && \(\s*<Link\s*href=\{`\/homes\/\$\{item\.id\}\/preview`\}/);
+    assert.match(read('app/dashboard/page.tsx'), /isWaiting && \(\s*<Link\s*href=\{`\/homes\/\$\{item\.id\}\/preview`\}/);
     assert.match(read('components/admin/ListingReviewQueue.tsx'), /href=\{`\/homes\/\$\{item\.id\}\/preview`\}/);
     assert.match(read('components/admin/AdminListingRow.tsx'), /'\/homes\/' \+ id \+ '\/preview'/);
 });

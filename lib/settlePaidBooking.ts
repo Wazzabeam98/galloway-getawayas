@@ -204,7 +204,7 @@ export async function settlePaidBookingSession(
     let nextStatus = 'pending';
     let listingTitle = 'your stay';
     let listingRow: any = null;
-    if (booking) {
+    if (booking && booking.listing_id) {
         const { data: listing } = await admin
             .from('listings')
             .select('instant_book, title, check_in_time, check_in_end_time, check_out_time, cancellation_policy, commission_rate')
@@ -213,6 +213,26 @@ export async function settlePaidBookingSession(
         listingRow = listing || null;
         if (listing && listing.instant_book === true) nextStatus = 'confirmed';
         listingTitle = (listing && listing.title) || listingTitle;
+    } else if (booking && booking.room_type_id) {
+        // A HOTEL ROOM-TYPE STAY. A hotel booking carries no listing_id (so it
+        // never takes part in the cottage exclusion constraint); it references a
+        // room type instead. Hotels are instant-book in phase one — the rooms
+        // were counted free at checkout — so a paid hotel stay confirms here
+        // exactly as an instant-book cottage does. Everything below (the
+        // compare-and-set, the ledger row, the saved card, the confirmation
+        // emails) is the same mechanism, using the hotel's name for the title.
+        // The commission rate and cancellation policy are already frozen on the
+        // booking row at checkout, so nothing more is read from the hotel here.
+        const { data: roomType } = await admin
+            .from('hotel_room_types')
+            .select('name, hotels ( name )')
+            .eq('id', booking.room_type_id)
+            .maybeSingle();
+        nextStatus = 'confirmed';
+        const hotelName = roomType && (roomType as any).hotels && (roomType as any).hotels.name;
+        listingTitle = hotelName
+            ? hotelName + (roomType && roomType.name ? ' — ' + roomType.name : '')
+            : (roomType && roomType.name) || listingTitle;
     }
 
     const paidPatch: Record<string, any> = {

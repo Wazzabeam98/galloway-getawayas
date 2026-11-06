@@ -60,7 +60,7 @@ test('each setting stands on its own: a price leaves blocks and minimum stays al
 });
 
 test('the page no longer writes calendar_overrides from the browser, and checks before sending', () => {
-    const src = fs.readFileSync(path.join(ROOT, 'app/dashboard/calendar/page.tsx'), 'utf8');
+    const src = fs.readFileSync(path.join(ROOT, 'components/dashboard/CottageCalendarClient.tsx'), 'utf8');
     const writes = src.match(/from\('calendar_overrides'\)\s*\.(upsert|insert|update|delete)/g);
     assert.equal(writes, null, 'browser writes: ' + writes);
     assert.match(src, /fetch\('\/api\/listings\/calendar', \{\s*method: 'POST'/);

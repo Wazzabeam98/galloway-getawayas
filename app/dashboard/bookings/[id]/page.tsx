@@ -7,6 +7,8 @@ import { formatGBP } from "@/lib/formatMoney";
 import Link from "next/link";
 import { adminClient } from "@/lib/supabaseAdmin";
 import { checkListing, accessibleListings, isFullAccess } from "@/lib/access";
+import { checkHotel, isFullAccess as hotelIsFullAccess } from "@/lib/hotelAccess";
+import { hotelsOpen } from "@/lib/hotels";
 import { getImageUrl, capitializeFirst, firstName as firstNameOf, greetingName } from "@/lib/utils";
 import { rateFor, netOfFee } from "@/lib/fees";
 import { formatUk, refundDue, policyOf, freeCancelUntilKey } from "@/lib/cancellation";
@@ -93,22 +95,69 @@ export default async function BookingDetail({ params }: { params: { id: string }
 
     if (!booking) notFound();
 
-    const access = await checkListing(uid, booking.listing_id, 'can_bookings');
-    if (!access) notFound();
+    // A hotel stay is a listing-less booking (room_type_id set). It reaches the
+    // same page: access comes from the hotel, and `listing` below is built from
+    // the hotel and its room type so every listing-shaped reference still works.
+    const isHotelBooking = !booking.listing_id && !!booking.room_type_id && hotelsOpen();
+
+    const listingAccess = booking.listing_id ? await checkListing(uid, booking.listing_id, 'can_bookings') : null;
+    let hotelAccess: Awaited<ReturnType<typeof checkHotel>> = null;
+    let hotelRoom: any = null;
+    let hotelRow: any = null;
+    if (isHotelBooking) {
+        const { data: rt } = await admin
+            .from('hotel_room_types')
+            .select('id, hotel_id, name')
+            .eq('id', booking.room_type_id)
+            .maybeSingle();
+        if (rt) {
+            hotelRoom = rt;
+            hotelAccess = await checkHotel(uid, rt.hotel_id, 'can_bookings');
+            if (hotelAccess) {
+                const { data: h } = await admin
+                    .from('hotels')
+                    .select('id, name, images, location, check_in_time, check_in_end_time, check_out_time, commission_rate, cancellation_policy, owner_id')
+                    .eq('id', rt.hotel_id)
+                    .maybeSingle();
+                hotelRow = h;
+            }
+        }
+    }
+
+    if (!listingAccess && !hotelAccess) notFound();
 
     // Cancelling, declining, refunding and requesting money ride with full
     // access: the owner, or a co-host the owner ticked every permission for. A
     // partial co-host is shown the booking without the buttons their grant does
     // not cover — and the routes behind those buttons check the same thing, so a
     // forged request is refused too.
-    const isOwnerEquivalent = isFullAccess(access);
-    const showMoney = access.can_earnings;
+    const isOwnerEquivalent = listingAccess ? isFullAccess(listingAccess) : hotelIsFullAccess(hotelAccess!);
+    const showMoney = (listingAccess || hotelAccess!).can_earnings;
+    const canListing = (listingAccess || hotelAccess!).can_listing;
 
-    const { data: listing } = await admin
-        .from('listings')
-        .select('id, title, images, location, check_in_time, check_in_end_time, check_out_time, commission_rate, cancellation_policy, damage_deposit, host_id, max_guests, amenities')
-        .eq('id', booking.listing_id)
-        .maybeSingle();
+    const { data: listingRow } = booking.listing_id
+        ? await admin
+            .from('listings')
+            .select('id, title, images, location, check_in_time, check_in_end_time, check_out_time, commission_rate, cancellation_policy, damage_deposit, host_id, max_guests, amenities')
+            .eq('id', booking.listing_id)
+            .maybeSingle()
+        : { data: null };
+
+    const listing: any = listingRow || (hotelRow ? {
+        id: hotelRow.id,
+        title: `${hotelRow.name} — ${hotelRoom?.name || 'Room'}`,
+        images: hotelRow.images,
+        location: hotelRow.location,
+        check_in_time: hotelRow.check_in_time,
+        check_in_end_time: hotelRow.check_in_end_time,
+        check_out_time: hotelRow.check_out_time,
+        commission_rate: hotelRow.commission_rate,
+        cancellation_policy: hotelRow.cancellation_policy,
+        damage_deposit: null,
+        host_id: hotelRow.owner_id,
+        max_guests: null,
+        amenities: [],
+    } : null);
 
     // The guest's private contact details — phone and email only. Their NAME is
     // NOT here: for a silent/seed guest account the profile_private name columns
@@ -157,15 +206,15 @@ export default async function BookingDetail({ params }: { params: { id: string }
     // The standing listing code AND this booking's override (if any). The
     // override wins — the same precedence the guest's arrival screen and the
     // scheduled sender apply — so the host sees exactly the code the guest will.
-    const [{ data: codeRow }, { data: overrideRow }] = access.can_listing
+    const [{ data: codeRow }, { data: overrideRow }] = (canListing && !!booking.listing_id)
         ? await Promise.all([
             admin.from('listing_access_codes').select('code').eq('listing_id', booking.listing_id).maybeSingle(),
             admin.from('booking_access_codes').select('code').eq('booking_id', booking.id).maybeSingle(),
         ])
         : [{ data: null }, { data: null }];
     // Stored sealed (lib/secretBox); opened only here, behind can_listing.
-    const listingCode = access.can_listing && codeRow ? await revealSecret(codeRow.code, { table: 'listing_access_codes', id: booking.listing_id }, 'dashboard/bookings') : null;
-    const doorCodeOverride = access.can_listing && overrideRow ? await revealSecret(overrideRow.code, { table: 'booking_access_codes', id: booking.id }, 'dashboard/bookings') : null;
+    const listingCode = (canListing && !!booking.listing_id) && codeRow ? await revealSecret(codeRow.code, { table: 'listing_access_codes', id: booking.listing_id }, 'dashboard/bookings') : null;
+    const doorCodeOverride = (canListing && !!booking.listing_id) && overrideRow ? await revealSecret(overrideRow.code, { table: 'booking_access_codes', id: booking.id }, 'dashboard/bookings') : null;
     const doorCode = doorCodeOverride || listingCode;
 
     // The host's private notes box has been removed from this page. The table
@@ -573,7 +622,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             never receives the code. Editable on an upcoming booking:
                             the edit sets an override for this booking only, without
                             changing the property's code. */}
-                        {access.can_listing && (
+                        {(canListing && !!booking.listing_id) && (
                             <EditableDoorCode
                                 bookingId={booking.id}
                                 code={doorCode}
