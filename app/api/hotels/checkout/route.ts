@@ -8,10 +8,10 @@ import { returnUrl } from '@/lib/email';
 import { requireGuestTerms } from '@/lib/agreementRecords';
 import { anonGuestTermsMetadata } from '@/lib/agreements';
 import { DEFAULT_COMMISSION_PERCENT } from '@/lib/fees';
-import { nightsBetween, dateFromKey } from '@/lib/pricing';
+import { nightsBetween, dateFromKey, quoteBooking, type PricingListing } from '@/lib/pricing';
 import { hotelsOpen } from '@/lib/hotels';
-import { quoteHotelStay } from '@/lib/hotelPricing';
 import { roomsAvailable } from '@/lib/hotelAvailability';
+import { maxNightsFor, earliestCheckInKey, londonTodayKey } from '@/lib/stayRules';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +48,7 @@ export async function POST(request: Request) {
         const checkOut: string = body && body.checkOut;
         const adults = Math.max(1, Math.floor(Number(body && body.adults) || 1));
         const children = Math.max(0, Math.floor(Number(body && body.children) || 0));
+        const pets = Math.max(0, Math.floor(Number(body && body.pets) || 0));
         const wantsBreakfast = !!(body && body.breakfast);
 
         if (!roomTypeId || !checkIn || !checkOut) {
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
         // role — a co-host is not the host_id, so RLS would hide rows.
         const { data: roomType } = await admin
             .from('hotel_room_types')
-            .select('id, hotel_id, name, inventory_count, max_adults, max_children, max_occupancy, price_per_night, min_nights, breakfast_included, breakfast_price, active, hotels ( id, owner_id, name, status, cancellation_policy, cancellation_custom_days, commission_rate )')
+            .select('id, hotel_id, name, inventory_count, max_adults, max_children, max_occupancy, price_per_night, min_nights, max_nights, advance_notice, extra_guest_fee, extra_guest_after, extra_guest_period, pet_fee, weekly_discount, monthly_discount, last_minute_discount, breakfast_included, breakfast_price, active, hotels ( id, owner_id, name, status, cancellation_policy, cancellation_custom_days, commission_rate )')
             .eq('id', roomTypeId)
             .maybeSingle();
 
@@ -86,6 +87,17 @@ export async function POST(request: Request) {
         }
         if (nights < (roomType.min_nights || 1)) {
             return NextResponse.json({ ok: false, error: `This room has a minimum stay of ${roomType.min_nights} night(s).` }, { status: 400 });
+        }
+        // The room's maximum stay and advance-notice walls, the same rules
+        // lib/stayRules gives a cottage, enforced here as the authority.
+        const maxN = maxNightsFor(roomType as any);
+        if (maxN && nights > maxN) {
+            return NextResponse.json({ ok: false, error: `This room has a maximum stay of ${maxN} night(s).` }, { status: 400 });
+        }
+        const todayKey = londonTodayKey();
+        const earliest = earliestCheckInKey(roomType as any, todayKey);
+        if (checkIn < earliest) {
+            return NextResponse.json({ ok: false, error: 'That check-in is sooner than this room can be booked.' }, { status: 400 });
         }
 
         // The room-type calendar: any night the owner CLOSED blocks the booking,
@@ -144,9 +156,31 @@ export async function POST(request: Request) {
             }]
             : [];
 
-        // Recompute the price from the room type, with any seasonal overrides and
-        // the breakfast extra. The browser never sets the total.
-        const quote = quoteHotelStay({ price_per_night: Number(roomType.price_per_night) }, checkIn, checkOut, 1, priceOverrides, extras, guestCount);
+        // Price the stay with the cottage pricing engine (lib/pricing.quoteBooking)
+        // — a hotel room type is a PricingListing: its nightly rate with any
+        // seasonal overrides, extra-guest and pet fees (never cleaning), its
+        // length-of-stay/last-minute discounts, and the breakfast extra. Reusing
+        // the tested money path means a hotel stay is priced, discounted, feed
+        // and frozen exactly as a cottage stay. The browser never sets the total.
+        const pricingRoom: PricingListing = {
+            price_per_night: Number(roomType.price_per_night),
+            cleaning_fee: 0, // a hotel room has no cleaning fee
+            pet_fee: Number(roomType.pet_fee) || 0,
+            extra_guest_fee: Number(roomType.extra_guest_fee) || 0,
+            extra_guest_after: Number(roomType.extra_guest_after) || 1,
+            extra_guest_period: roomType.extra_guest_period || 'night',
+            new_listing_promo: false, // the 20% new-listing promo is a cottage onboarding perk
+            last_minute_discount: !!roomType.last_minute_discount,
+            weekly_discount: !!roomType.weekly_discount,
+            monthly_discount: !!roomType.monthly_discount,
+        };
+        const quote = quoteBooking(
+            pricingRoom, priceOverrides,
+            dateFromKey(checkIn), dateFromKey(checkOut),
+            adults, children, pets,
+            { newListingEligible: false, asOf: new Date() },
+            extras,
+        );
 
         // Commission is frozen onto the booking now (hotel's rate, else the 10%
         // default), exactly as a cottage freezes rateFor(listing). The payout
@@ -168,20 +202,22 @@ export async function POST(request: Request) {
                 guests: adults + children,
                 adults,
                 children,
-                pets: 0,
+                pets,
                 total_price: quote.total,
                 status: 'pending_payment',
                 payment_status: 'unpaid',
                 payment_plan: 'full',
                 balance_amount: 0,
-                // Frozen at checkout, like a cottage stay.
+                // Frozen at checkout, like a cottage stay — the fees and discount
+                // the engine worked out, so the receipt and payout read what was
+                // charged, never the room as it stands later.
                 commission_rate: commissionRate,
                 cancellation_policy: hotel.cancellation_policy || 'Flexible',
                 cancellation_custom_days: hotel.cancellation_policy === 'Custom' ? hotel.cancellation_custom_days : null,
                 non_refundable: false,
                 cleaning_fee: 0,
-                pet_fee: 0,
-                extra_guest_fee: 0,
+                pet_fee: quote.petFeeTotal,
+                extra_guest_fee: quote.extraGuestTotal,
                 nightly_breakdown: quote.nightly,
                 extras_total: quote.extrasTotal,
                 extras_breakdown: quote.extras,

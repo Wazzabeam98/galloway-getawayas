@@ -9,6 +9,8 @@ import { DEFAULT_COMMISSION_PERCENT, rateFor, netOfFee, feeAmount } from '@/lib/
 import { formatUk } from '@/lib/cancellation';
 import { createClient } from '@supabase/supabase-js';
 import { listingIdsFor } from '@/lib/access';
+import { hotelIdsFor } from '@/lib/hotelAccess';
+import { hotelsOpen } from '@/lib/hotels';
 import { outstandingDebts, outstandingOf, debtAgainstStays, round2 } from '@/lib/hostDebt';
 import { readSchedule, payoutTimingText } from '@/lib/payoutTiming';
 import { formatGBP } from '@/lib/formatMoney';
@@ -40,9 +42,38 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
         { auth: { persistSession: false } }
     );
 
-    const { data: allBookings } = allowed.length
+    const { data: listingBookings } = allowed.length
         ? await admin.from("bookings").select("*").in("listing_id", allowed)
         : { data: [] };
+
+    // Hotel earnings belong on this same page, in the same range and chart — a
+    // hotel stay is a normal bookings row (room_type_id set, listing_id NULL)
+    // with its commission frozen, so it nets exactly like a cottage stay. Behind
+    // the launch flag. Scoped to the hotels this person may see money for.
+    const hotelRoomIdsForTitle = new Map<string, string>(); // room_type_id → "Hotel — Room"
+    let hotelBookings: any[] = [];
+    if (hotelsOpen()) {
+        const earnHotelIds = await hotelIdsFor(viewerId, 'can_earnings');
+        if (earnHotelIds.length) {
+            const { data: roomRows } = await admin
+                .from('hotel_room_types').select('id, name, hotel_id').in('hotel_id', earnHotelIds);
+            const roomIds = (roomRows || []).map((r: any) => r.id);
+            if (roomIds.length) {
+                const { data: hotelRows } = await admin.from('hotels').select('id, name').in('id', earnHotelIds);
+                const hotelName = new Map((hotelRows || []).map((h: any) => [h.id, h.name]));
+                (roomRows || []).forEach((r: any) => {
+                    const hn = hotelName.get(r.hotel_id);
+                    hotelRoomIdsForTitle.set(r.id, hn ? `${hn} — ${r.name}` : r.name);
+                });
+                const { data: hb } = await admin.from('bookings').select('*').in('room_type_id', roomIds);
+                hotelBookings = hb || [];
+            }
+        }
+    }
+
+    const allBookings = [...(listingBookings || []), ...hotelBookings];
+    // A booking's property, listing or hotel room, for the per-property breakdown.
+    const keyOf = (b: any) => b.listing_id || b.room_type_id || '';
 
     // Everything on this page is scoped to bookings whose check-in falls
     // within the selected period.
@@ -54,12 +85,15 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
         .filter((b) => b.status === 'confirmed')
         .sort((a, b) => (a.check_in < b.check_in ? -1 : 1));
 
-    const listingIds = Array.from(new Set(bookings.map((b) => b.listing_id).concat(payoutRows.map((b) => b.listing_id))));
+    const listingIds = Array.from(new Set(bookings.map((b) => b.listing_id).concat(payoutRows.map((b) => b.listing_id)).filter(Boolean)));
     const { data: listings } = listingIds.length
         ? await admin.from("listings").select("id, title, commission_rate").in("id", listingIds)
         : { data: [] };
     const listingMap = new Map((listings || []).map((l) => [l.id, l.title]));
     const rateMap = new Map((listings || []).map((l) => [l.id, rateFor(l)]));
+
+    // One title for either kind — a listing, or a hotel room type.
+    const titleOf = (b: any) => listingMap.get(b.listing_id) || hotelRoomIdsForTitle.get(b.room_type_id) || 'Listing';
 
     // Each booking is netted using its own listing's rate, since different
     // properties can be on different arrangements.
@@ -126,15 +160,14 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     // The scale moved into MonthlyTrendChart with the bars — it is only
     // needed where the heights are worked out.
 
-    const byListing = new Map<string, number>();
+    const byListing = new Map<string, { title: string; net: number }>();
     confirmed.forEach((b) => {
-        byListing.set(
-            b.listing_id,
-            (byListing.get(b.listing_id) || 0) + netOfFee(Number(b.total_price), rateOfBooking(b))
-        );
+        const k = keyOf(b);
+        const prev = byListing.get(k);
+        byListing.set(k, { title: prev?.title || titleOf(b), net: (prev?.net || 0) + netOfFee(Number(b.total_price), rateOfBooking(b)) });
     });
     const listingBreakdown = Array.from(byListing.entries())
-        .map(([id, net]) => ({ id, title: listingMap.get(id) || 'Listing', net }))
+        .map(([id, v]) => ({ id, title: v.title, net: v.net }))
         .sort((a, b) => b.net - a.net);
 
     // A stay pays out the day after check-in.
@@ -162,7 +195,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
         return {
             id: b.id,
             hostId: b.host_id,
-            title: listingMap.get(b.listing_id) || 'Listing',
+            title: titleOf(b),
             checkIn: b.check_in,
             due: due,
             paidOutAt: b.paid_out_at,

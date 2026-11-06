@@ -8,46 +8,13 @@ import { installAliases } from './helpers/stub';
 
 installAliases();
 
-const { quoteHotelStay } = require('../lib/hotelPricing');
+// A hotel room type is priced through lib/pricing.quoteBooking now (the house
+// rule: the one place a total is worked out), building a PricingListing from the
+// room — so there is no hotel-only quote function to test here. The cottage
+// pricing tests cover the engine; the hotel checkout's own test (how it builds
+// that PricingListing) is exercised end to end. This file keeps the other hotel
+// divergence: counting availability.
 const { peakRoomsHeld, nightsOf, HOLD_MINUTES } = require('../lib/hotelAvailability');
-
-test('a room-type quote is nights × rate × rooms, in the PriceQuote shape', () => {
-    const q = quoteHotelStay({ price_per_night: 95 }, '2026-12-01', '2026-12-04', 1);
-    assert.equal(q.nights, 3);
-    assert.equal(q.nightsSubtotal, 285);
-    assert.equal(q.total, 285);
-    assert.equal(q.nightly.length, 3);
-    assert.deepEqual(q.nightly[0], { date: '2026-12-01', rate: 95, kind: 'base' });
-    // Cottage-only lines are zero in phase one.
-    assert.equal(q.cleaningFeeTotal, 0);
-    assert.equal(q.petFeeTotal, 0);
-    assert.equal(q.extrasTotal, 0);
-    assert.equal(q.discount, null);
-});
-
-test('more than one room multiplies the rate', () => {
-    const q = quoteHotelStay({ price_per_night: 100 }, '2026-12-01', '2026-12-03', 2);
-    assert.equal(q.total, 400); // 2 nights × £100 × 2 rooms
-    assert.equal(q.nightly[0].rate, 200);
-});
-
-test('a breakfast extra is priced per person per night and summed into the total', () => {
-    const extras = [{ id: 'breakfast', label: 'Breakfast', unit: 'night', unitPrice: 15, qty: 2, vat_treatment: 'standard' }];
-    // £95 × 2 nights = 190, breakfast £15 × 2 guests × 2 nights = 60.
-    const q = quoteHotelStay({ price_per_night: 95 }, '2026-12-20', '2026-12-22', 1, {}, extras, 2);
-    assert.equal(q.nightsSubtotal, 190);
-    assert.equal(q.extrasTotal, 60);
-    assert.equal(q.total, 250);
-    assert.equal(q.extras.length, 1);
-    assert.deepEqual(q.extras[0], { id: 'breakfast', label: 'Breakfast', unit: 'night', unitPrice: 15, qty: 2, units: 2, lineTotal: 60, vat_treatment: 'standard' });
-});
-
-test('no extras leaves the total nights-only (phase-one default)', () => {
-    const q = quoteHotelStay({ price_per_night: 95 }, '2026-12-20', '2026-12-22');
-    assert.equal(q.total, 190);
-    assert.equal(q.extrasTotal, 0);
-    assert.equal(q.extras.length, 0);
-});
 
 test('nightsOf is half-open [in, out) — the checkout morning is not a night', () => {
     assert.deepEqual(nightsOf('2026-12-01', '2026-12-04'), ['2026-12-01', '2026-12-02', '2026-12-03']);

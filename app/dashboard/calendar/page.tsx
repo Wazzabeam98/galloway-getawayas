@@ -37,14 +37,14 @@ export default async function CalendarPage() {
 
     // Hotel room types this person may manage, behind the launch flag.
     let hotelList: { id: string; name: string }[] = [];
-    let hotelRooms: { id: string; hotel_id: string; name: string; price_per_night: number; inventory_count: number }[] = [];
+    let hotelRooms: any[] = [];
     if (hotelsOpen() && uid) {
         const hAccess = await accessibleHotels(uid);
         const calHotelIds = hAccess.filter((a) => a.can_calendar).map((a) => a.hotelId);
         if (calHotelIds.length) {
             const [{ data: hotelRows }, { data: roomRows }] = await Promise.all([
                 admin.from('hotels').select('id, name').in('id', calHotelIds),
-                admin.from('hotel_room_types').select('id, hotel_id, name, price_per_night, inventory_count')
+                admin.from('hotel_room_types').select('id, hotel_id, name, price_per_night, inventory_count, min_nights, max_nights, advance_notice, extra_guest_fee, extra_guest_after, extra_guest_period, pet_fee, weekly_discount, monthly_discount, last_minute_discount')
                     .in('hotel_id', calHotelIds).eq('active', true).order('sort_order', { ascending: true }),
             ]);
             hotelList = (hotelRows || []) as any;
