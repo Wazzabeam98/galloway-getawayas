@@ -283,7 +283,7 @@ function Wizard({ userId }: { userId: string }) {
     }
     function goBack() {
         setFormError(null);
-        if (step > 1) setStep(step - 1); else router.push('/hotels/dashboard');
+        if (step > 1) setStep(step - 1); else router.push('/dashboard');
     }
 
     async function publish() {
