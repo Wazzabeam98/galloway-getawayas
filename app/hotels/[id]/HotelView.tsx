@@ -51,6 +51,7 @@ type RoomType = {
     accessibility?: string[] | null;
     amenities: string[] | null;
     breakfast_included?: boolean | null;
+    breakfast_price?: number | null;
     images: string[] | null;
     price_per_night: number;
     min_nights: number;
@@ -90,6 +91,8 @@ export default function HotelView({ hotel, roomTypes, preview = false }: { hotel
     const [agreeError, setAgreeError] = useState<string | undefined>();
     const [busyId, setBusyId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    // Which rooms the guest has added the breakfast extra to, by room id.
+    const [breakfastRooms, setBreakfastRooms] = useState<Record<string, boolean>>({});
 
     const stayNights = nights(checkIn, checkOut);
     const photos = (hotel.images || []).filter(Boolean);
@@ -106,7 +109,7 @@ export default function HotelView({ hotel, roomTypes, preview = false }: { hotel
         try {
             const res = await fetch('/api/hotels/checkout', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ roomTypeId: rt.id, checkIn, checkOut, adults, children, guestTermsVersion: AGREEMENTS.guest.version }),
+                body: JSON.stringify({ roomTypeId: rt.id, checkIn, checkOut, adults, children, breakfast: !!breakfastRooms[rt.id], guestTermsVersion: AGREEMENTS.guest.version }),
             });
             if (res.status === 401) { setError('Please sign in to book this room — use “Log in or sign up” at the top of the page.'); setBusyId(null); return; }
             const body = await res.json().catch(() => ({}));
@@ -217,7 +220,15 @@ export default function HotelView({ hotel, roomTypes, preview = false }: { hotel
                     <div className="space-y-4">
                         {roomTypes.map((rt) => {
                             const roomPhotos = (rt.images || []).filter(Boolean);
-                            const stayTotal = datesChosen ? rt.price_per_night * stayNights : 0;
+                            // A paid breakfast extra: offered only when it is not
+                            // already in the price and a price is set. Priced per
+                            // person per night, the same figure the server charges.
+                            const breakfastPrice = Number(rt.breakfast_price);
+                            const offersBreakfast = !rt.breakfast_included && Number.isFinite(breakfastPrice) && breakfastPrice > 0;
+                            const breakfastOn = offersBreakfast && !!breakfastRooms[rt.id];
+                            const guestCount = adults + children;
+                            const breakfastTotal = breakfastOn && datesChosen ? breakfastPrice * guestCount * stayNights : 0;
+                            const stayTotal = (datesChosen ? rt.price_per_night * stayNights : 0) + breakfastTotal;
                             return (
                                 <div key={rt.id} className="rounded-2xl border border-slate-200 bg-white shadow-[0_6px_16px_rgba(0,0,0,0.12)] overflow-hidden">
                                     <div className="grid sm:grid-cols-[200px_1fr_220px]">
@@ -236,6 +247,14 @@ export default function HotelView({ hotel, roomTypes, preview = false }: { hotel
                                                 {rt.breakfast_included && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800"><Coffee className="h-3 w-3" /> Breakfast included</span>}
                                                 {(rt.amenities || []).slice(0, 4).map((a) => <span key={a} className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-600">{a}</span>)}
                                             </div>
+                                            {offersBreakfast && (
+                                                <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+                                                    <input type="checkbox" checked={breakfastOn} disabled={preview}
+                                                        onChange={(e) => setBreakfastRooms((prev) => ({ ...prev, [rt.id]: e.target.checked }))}
+                                                        className="h-4 w-4 rounded border-slate-300 text-emerald-700 focus-visible:ring-emerald-700" />
+                                                    <span className="inline-flex items-center gap-1"><Coffee className="h-4 w-4 text-emerald-700" /> Add breakfast — £{breakfastPrice.toFixed(2).replace(/\.00$/, '')} per person, per night</span>
+                                                </label>
+                                            )}
                                         </div>
                                         <div className="p-4 border-t sm:border-t-0 sm:border-l border-slate-100 flex flex-col justify-between">
                                             <div className="text-right">

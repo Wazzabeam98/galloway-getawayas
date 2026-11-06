@@ -21,9 +21,9 @@ import { HOTEL_FACILITY_CATEGORIES, PARKING_OPTIONS } from '@/lib/hotelFacilitie
 import { PillChoice, bigInputCls } from '@/components/hotel-wizard/parts';
 import RoomEditor from '@/components/hotel-wizard/RoomEditor';
 import RestaurantHours, { restaurantSummary, type RestaurantSchedule } from '@/components/hotel-wizard/RestaurantHours';
+import AddressLookup from '@/components/address/AddressLookup';
 import { HouseRulesCard, type HouseRules } from '@/components/listing-editor/ArrivalCards';
 import { CUSTOM_MIN_DAYS, CUSTOM_MAX_DAYS } from '@/lib/cancellation';
-import HotelView from '@/app/hotels/[id]/HotelView';
 import { Trash2, Plus, Star, Pencil, Check, ChevronLeft } from 'lucide-react';
 
 type RoomDraft = Partial<DraftRoomType> & { id?: string };
@@ -304,24 +304,6 @@ function Wizard({ userId }: { userId: string }) {
         window.location.href = `/hotels/${id}?submitted=1`;
     }
 
-    const previewHotel = {
-        id: hotelId || 'preview', name, description: description || null, star_rating: star === '' ? null : Number(star),
-        property_type: propertyType || null, location, street_address: streetAddress,
-        check_in_time: checkIn, check_out_time: checkOut, facilities: facilitiesOut, house_rules: houseRules.additionalRules || null,
-        cancellation_policy: cancellation, images: photos, parking_type: parkingType,
-        parking_price: parkingPrice === '' ? null : Number(parkingPrice),
-        restaurant_hours: restaurantSummary(restaurantSchedule) || null,
-    };
-    const previewRooms = rooms.map((r, i) => ({
-        id: r.id || 'r' + i, name: r.name || 'Room', description: r.description || null,
-        inventory_count: Number(r.inventory_count) || 1, max_adults: Number(r.max_adults) || 1,
-        max_children: Number(r.max_children) || 0, max_occupancy: occupancyOf(r as any),
-        size_sqm: r.size_sqm ?? null, bed_config: (r.bed_config as any) || [], bathroom_type: r.bathroom_type ?? null,
-        bathroom_features: r.bathroom_features || [], views: r.views || [], smoking: r.smoking ?? null,
-        accessibility: r.accessibility || [], amenities: r.amenities || [], breakfast_included: !!r.breakfast_included,
-        images: r.images || [], price_per_night: Number(r.price_per_night) || 0, min_nights: Number(r.min_nights) || 1,
-    }));
-
     return (
         <main className="min-h-screen bg-slate-50">
             <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-10 w-full">
@@ -375,13 +357,17 @@ function Wizard({ userId }: { userId: string }) {
                 )}
 
                 {step === HOTEL_STEPS.LOCATION && (
-                    <Step title="Where is it?">
-                        <div className="space-y-4">
-                            <Field label="Building / flat (optional)"><input value={flat} onChange={(e) => setFlat(e.target.value)} className={bigInputCls} /></Field>
-                            <Field label="Street"><input value={street} onChange={(e) => setStreet(e.target.value)} placeholder="1 Harbour Street" className={bigInputCls} /></Field>
-                            <Field label="Town"><input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Kirkcudbright" className={bigInputCls} /></Field>
-                            <Field label="Postcode"><input value={postcode} onChange={(e) => setPostcode(e.target.value)} placeholder="DG6 4JG" className={bigInputCls} /></Field>
-                        </div>
+                    <Step title="Where is it?" hint="A hotel publishes its address, so guests can find you.">
+                        {/* The same address search as the holiday-let sign-up: type a
+                            postcode or street and pick it, or "Enter it by hand". The
+                            lookup answers from a fake off production (type ID1 1QD on
+                            TEST), so no real lookup credits are spent walking it. */}
+                        <AddressLookup
+                            value={{ house: flat, street, town: city, postcode }}
+                            onChange={(a) => { setFlat(a.house); setStreet(a.street); setCity(a.town); setPostcode(a.postcode); }}
+                            searchEnabled
+                            showErrors={!!formError}
+                        />
                     </Step>
                 )}
 
@@ -421,13 +407,16 @@ function Wizard({ userId }: { userId: string }) {
                                     <input type="number" min={0} value={parkingPrice} onChange={(e) => setParkingPrice(e.target.value === '' ? '' : Number(e.target.value))} className={bigInputCls} />
                                 </Field>
                             )}
-                            {facilities.includes('Restaurant') && (
-                                <div>
-                                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">Restaurant opening hours</label>
-                                    <RestaurantHours value={restaurantSchedule} onChange={setRestaurantSchedule} />
-                                </div>
-                            )}
                         </div>
+                    </Step>
+                )}
+
+                {step === HOTEL_STEPS.RESTAURANT && (
+                    <Step title="Restaurant or bar hours" hint="If you have a restaurant or bar, set its opening hours. Leave every day closed if you don't.">
+                        {/* Set Monday, and opening the next day pre-fills it with
+                            Monday's times (and so on down the week) — still editable
+                            — so the hours aren't typed seven times. */}
+                        <RestaurantHours value={restaurantSchedule} onChange={setRestaurantSchedule} />
                     </Step>
                 )}
 
@@ -513,8 +502,27 @@ function Wizard({ userId }: { userId: string }) {
 
                 {step === HOTEL_STEPS.REVIEW && (
                     <Step title="Review and publish" hint="This is exactly what guests will see.">
-                        <div className="rounded-2xl border border-slate-200 overflow-hidden mb-5">
-                            <HotelView hotel={previewHotel as any} roomTypes={previewRooms as any} preview />
+                        {/* The real guest page, not a cramped embed: the title opens
+                            the actual hotel page (owner preview) in a new tab — the
+                            same page a guest sees, the way the holiday-let review and
+                            the admin listing review open the real listing. */}
+                        <div className="rounded-2xl border border-slate-200 bg-white p-5 mb-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                            {hotelId ? (
+                                <a href={`/hotels/${hotelId}/preview`} target="_blank" rel="noopener noreferrer"
+                                    className="group flex items-center gap-4">
+                                    <div className="h-20 w-28 flex-none overflow-hidden rounded-xl bg-slate-100">
+                                        {photos[0] && <img src={getImageUrl(photos[0])} alt="" className="h-full w-full object-cover" />}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-1.5 font-semibold text-slate-900 group-hover:text-emerald-700">
+                                            {name || 'Your hotel'} <ChevronLeft className="h-4 w-4 rotate-180" />
+                                        </div>
+                                        <p className="text-sm text-slate-500">Open your hotel page as a guest sees it</p>
+                                    </div>
+                                </a>
+                            ) : (
+                                <p className="text-sm text-slate-500">Finish the earlier steps and your hotel page preview will appear here.</p>
+                            )}
                         </div>
                         <AgreementTick doc="host" checked={agreed} onChange={setAgreed} />
                         <p className="mt-3 text-sm text-slate-500">When you publish, your hotel goes to Galloway Getaways for a quick review before it appears to guests.</p>

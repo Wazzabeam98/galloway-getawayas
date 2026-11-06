@@ -126,6 +126,9 @@ export async function POST(request: Request) {
                     accessibility: Array.isArray(r.accessibility) ? r.accessibility : [],
                     amenities: Array.isArray(r.amenities) ? r.amenities : [],
                     breakfast_included: !!r.breakfast_included,
+                    // A paid breakfast extra only when it is NOT in the price and a
+                    // positive price was given; otherwise cleared.
+                    breakfast_price: !r.breakfast_included && Number(r.breakfast_price) > 0 ? Number(r.breakfast_price) : null,
                     images: Array.isArray((r as any).images) ? (r as any).images : [],
                     price_per_night: Number(r.price_per_night),
                     min_nights: r.min_nights != null ? Math.floor(Number(r.min_nights)) : 1,

@@ -31,6 +31,24 @@ test('more than one room multiplies the rate', () => {
     assert.equal(q.nightly[0].rate, 200);
 });
 
+test('a breakfast extra is priced per person per night and summed into the total', () => {
+    const extras = [{ id: 'breakfast', label: 'Breakfast', unit: 'night', unitPrice: 15, qty: 2, vat_treatment: 'standard' }];
+    // £95 × 2 nights = 190, breakfast £15 × 2 guests × 2 nights = 60.
+    const q = quoteHotelStay({ price_per_night: 95 }, '2026-12-20', '2026-12-22', 1, {}, extras, 2);
+    assert.equal(q.nightsSubtotal, 190);
+    assert.equal(q.extrasTotal, 60);
+    assert.equal(q.total, 250);
+    assert.equal(q.extras.length, 1);
+    assert.deepEqual(q.extras[0], { id: 'breakfast', label: 'Breakfast', unit: 'night', unitPrice: 15, qty: 2, units: 2, lineTotal: 60, vat_treatment: 'standard' });
+});
+
+test('no extras leaves the total nights-only (phase-one default)', () => {
+    const q = quoteHotelStay({ price_per_night: 95 }, '2026-12-20', '2026-12-22');
+    assert.equal(q.total, 190);
+    assert.equal(q.extrasTotal, 0);
+    assert.equal(q.extras.length, 0);
+});
+
 test('nightsOf is half-open [in, out) — the checkout morning is not a night', () => {
     assert.deepEqual(nightsOf('2026-12-01', '2026-12-04'), ['2026-12-01', '2026-12-02', '2026-12-03']);
     assert.deepEqual(nightsOf('2026-12-01', '2026-12-01'), []);

@@ -48,6 +48,7 @@ export async function POST(request: Request) {
         const checkOut: string = body && body.checkOut;
         const adults = Math.max(1, Math.floor(Number(body && body.adults) || 1));
         const children = Math.max(0, Math.floor(Number(body && body.children) || 0));
+        const wantsBreakfast = !!(body && body.breakfast);
 
         if (!roomTypeId || !checkIn || !checkOut) {
             return NextResponse.json({ ok: false, error: 'Pick a room, and your dates.' }, { status: 400 });
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
         // role — a co-host is not the host_id, so RLS would hide rows.
         const { data: roomType } = await admin
             .from('hotel_room_types')
-            .select('id, hotel_id, name, inventory_count, max_adults, max_children, max_occupancy, price_per_night, min_nights, active, hotels ( id, owner_id, name, status, cancellation_policy, cancellation_custom_days, commission_rate )')
+            .select('id, hotel_id, name, inventory_count, max_adults, max_children, max_occupancy, price_per_night, min_nights, breakfast_included, breakfast_price, active, hotels ( id, owner_id, name, status, cancellation_policy, cancellation_custom_days, commission_rate )')
             .eq('id', roomTypeId)
             .maybeSingle();
 
@@ -126,9 +127,26 @@ export async function POST(request: Request) {
         if (!terms.ok) return NextResponse.json(terms.body, { status: terms.status });
         const guestTermsMeta = anonGuestTermsMetadata(terms.stamp!);
 
-        // Recompute the price from the room type, with any seasonal overrides.
-        // The browser never sets the total.
-        const quote = quoteHotelStay({ price_per_night: Number(roomType.price_per_night) }, checkIn, checkOut, 1, priceOverrides);
+        // The breakfast extra, when the room offers one (not in the price, a
+        // positive price set) and the guest asked for it: priced per person per
+        // night, resolved against the room's own figure — never the browser's.
+        const breakfastPrice = Number(roomType.breakfast_price);
+        const offersBreakfast = !roomType.breakfast_included && Number.isFinite(breakfastPrice) && breakfastPrice > 0;
+        const guestCount = adults + children;
+        const extras = wantsBreakfast && offersBreakfast
+            ? [{
+                id: 'breakfast',
+                label: `Breakfast (£${breakfastPrice.toFixed(2).replace(/\.00$/, '')} per person, per night)`,
+                unit: 'night' as const,
+                unitPrice: breakfastPrice,
+                qty: guestCount,
+                vat_treatment: 'standard' as const,
+            }]
+            : [];
+
+        // Recompute the price from the room type, with any seasonal overrides and
+        // the breakfast extra. The browser never sets the total.
+        const quote = quoteHotelStay({ price_per_night: Number(roomType.price_per_night) }, checkIn, checkOut, 1, priceOverrides, extras, guestCount);
 
         // Commission is frozen onto the booking now (hotel's rate, else the 10%
         // default), exactly as a cottage freezes rateFor(listing). The payout
@@ -165,8 +183,8 @@ export async function POST(request: Request) {
                 pet_fee: 0,
                 extra_guest_fee: 0,
                 nightly_breakdown: quote.nightly,
-                extras_total: 0,
-                extras_breakdown: [],
+                extras_total: quote.extrasTotal,
+                extras_breakdown: quote.extras,
             })
             .select('id')
             .single();

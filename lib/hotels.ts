@@ -118,6 +118,9 @@ export type DraftRoomType = {
     accessibility?: string[];
     amenities?: string[]; // in-room amenities
     breakfast_included?: boolean;
+    // When breakfast is NOT in the price, an optional paid extra: a price per
+    // person per night the guest can add at booking (the cottage extras path).
+    breakfast_price?: number | null;
     images?: string[];
     price_per_night: number; // phase-one base rate; moves to the rate plan later
     min_nights?: number;
@@ -183,12 +186,15 @@ export const HOTEL_STEPS = {
     LOCATION: 3,
     ROOMS: 4,
     FACILITIES: 5,
-    PHOTOS: 6,
-    TIMES: 7,
-    CANCELLATION: 8,
-    REVIEW: 9,
+    // Restaurant/bar opening hours are their own step, not tucked under
+    // facilities — a hotel's dining hours are a thing guests scan for.
+    RESTAURANT: 6,
+    PHOTOS: 7,
+    TIMES: 8,
+    CANCELLATION: 9,
+    REVIEW: 10,
 } as const;
-export const HOTEL_TOTAL_STEPS = 9;
+export const HOTEL_TOTAL_STEPS = 10;
 
 type HotelRule = { step: number; message: string; failed: (h: PublishableHotel) => boolean };
 

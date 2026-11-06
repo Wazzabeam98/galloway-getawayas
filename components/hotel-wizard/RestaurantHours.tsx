@@ -28,9 +28,20 @@ export default function RestaurantHours({ value, onChange }: {
         if (ranges.length === 0) delete next[day]; else next[day] = ranges;
         onChange(next);
     }
+    // Opening a closed day copies the nearest earlier day that already has hours
+    // — so setting Monday and opening Tuesday carries Monday's times down the
+    // week (still editable), instead of re-typing them. Falls back to a sensible
+    // default when nothing earlier is set. A fresh copy, never the same array.
+    function prefillFor(dayIndex: number): TimeRange[] {
+        for (let i = dayIndex - 1; i >= 0; i--) {
+            const prev = sched[DAYS[i].key];
+            if (prev && prev.length) return prev.map((r) => ({ ...r }));
+        }
+        return [{ from: '09:00', to: '17:00' }];
+    }
     return (
         <div className="space-y-2">
-            {DAYS.map(({ key, label }) => {
+            {DAYS.map(({ key, label }, dayIndex) => {
                 const ranges = sched[key] || [];
                 const open = ranges.length > 0;
                 return (
@@ -38,7 +49,7 @@ export default function RestaurantHours({ value, onChange }: {
                         <span className="w-24 shrink-0 pt-1.5 text-sm font-medium text-slate-700">{label}</span>
                         <div className="flex-1">
                             {!open ? (
-                                <button type="button" onClick={() => setDay(key, [{ from: '09:00', to: '17:00' }])}
+                                <button type="button" onClick={() => setDay(key, prefillFor(dayIndex))}
                                     className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">Closed — add hours</button>
                             ) : (
                                 <div className="space-y-1.5">

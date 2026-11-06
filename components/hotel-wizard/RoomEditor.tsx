@@ -129,7 +129,18 @@ export default function RoomEditor({ initial, onSave, onClose }: {
                     </Section>
 
                     <div className="rounded-xl border border-slate-200 p-3">
-                        <Toggle label="Breakfast included in the price" checked={!!r.breakfast_included} onChange={(v) => set({ breakfast_included: v })} />
+                        <Toggle label="Breakfast included in the price" checked={!!r.breakfast_included} onChange={(v) => set({ breakfast_included: v, breakfast_price: v ? null : (r.breakfast_price ?? 15) })} />
+                        {/* Not in the price? Offer it as a paid extra a guest can
+                            add at booking — a price per person per night. */}
+                        {!r.breakfast_included && (
+                            <div className="mt-3 border-t border-slate-100 pt-3">
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Offer breakfast as a paid extra (£ per person, per night)</label>
+                                <input type="number" min={1} step="0.5" value={r.breakfast_price ?? ''} placeholder="e.g. 15"
+                                    onChange={(e) => set({ breakfast_price: e.target.value === '' ? null : Number(e.target.value) })}
+                                    className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                                <p className="mt-1 text-xs text-slate-500">Leave blank if you don’t offer breakfast.</p>
+                            </div>
+                        )}
                     </div>
 
                     <Field label="Price per night (£)"><input type="number" min={1} value={r.price_per_night ?? ''} onChange={(e) => set({ price_per_night: e.target.value === '' ? (undefined as any) : Number(e.target.value) })} className={bigInputCls} /></Field>
