@@ -26,11 +26,11 @@ export function photoDimensionProblem(width: number, height: number): string | n
     return null;
 }
 
-// A LENIENT floor that only blocks GENUINELY tiny images (thumbnails, icons),
-// used by the hotel flow. The cottage rule above (1024×683) rejected a 1024×682
-// photo by one pixel, which Liam flagged as too strict; this accepts anything
-// that is plausibly a real photo and blocks only the obviously-too-small. Same
-// shape as photoDimensionProblem so it drops in where that was used.
+// A LENIENT floor that blocks only GENUINELY tiny images (thumbnails, icons).
+// The strict rule above (1024×683) rejected a 1024×682 photo by one pixel, which
+// was blocking hosts for no good reason; this accepts anything that is plausibly
+// a real photo. Same shape as photoDimensionProblem. Used by the /addhome wizard
+// (and the hotel wizard).
 export const TINY_PHOTO_LONG_EDGE = 640;
 export const TINY_PHOTO_SHORT_EDGE = 426;
 export function tinyImageProblem(width: number, height: number): string | null {

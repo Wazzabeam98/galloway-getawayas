@@ -20,7 +20,7 @@ import PropertyTypePicker from '@/components/PropertyTypePicker';
 import { addressLineLabel, isSiteType } from '@/lib/propertyTypes';
 import Env from '@/config/Env';
 import { compressImage, readImageDimensions } from '@/lib/compressImage';
-import { photoDimensionProblem, GALLERY_CROP_ASPECT, CARD_CROP_ASPECT } from '@/lib/photoRules';
+import { tinyImageProblem, GALLERY_CROP_ASPECT, CARD_CROP_ASPECT } from '@/lib/photoRules';
 import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { DEFAULT_COMMISSION_PERCENT, feeAmount, netOfFee } from '@/lib/fees';
@@ -37,8 +37,36 @@ import {
 import {
     problemAtStep as ruleAtStep,
     firstPublishProblem as firstProblemIn,
+    fromRow as listingFromRow,
     NEW_LISTING_MIN_PHOTOS,
 } from '@/lib/listingRules';
+
+// Record a photo the wizard rejected or could not read, so we can see whether
+// hosts are being blocked at the photos step. Best-effort to /api/errors/report
+// (the client-safe writer to error_log, rate-limited) — never blocks the host.
+function logPhotoIssue(reason: string, file: File, size: { width: number; height: number } | null, err?: unknown) {
+    try {
+        const detail = {
+            reason,
+            size: ((size && size.width) || 0) + '×' + ((size && size.height) || 0),
+            type: file.type || 'unknown',
+            name: file.name,
+            bytes: file.size,
+            userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+            error: err ? String((err as any)?.message || err).slice(0, 300) : undefined,
+        };
+        fetch('/api/errors/report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message: 'addhome: photo ' + reason.split(':')[0] + ' at the photos step',
+                detail: JSON.stringify(detail),
+                path: 'addhome/photos',
+            }),
+            keepalive: true,
+        }).catch(() => { /* a logger that fails must not surface */ });
+    } catch { /* never block the host on logging */ }
+}
 
 export default function AddHome() {
     const [loading, setLoading] = useState(true);
@@ -54,6 +82,12 @@ export default function AddHome() {
     // Listing form state
     const [title, setTitle] = useState('');
     const [price, setPrice] = useState('');
+    // The nightly price field, so a blocked publish can take the host to it.
+    const priceInputRef = useRef<HTMLInputElement | null>(null);
+    // The Host Agreement box on the final step, highlighted when publish is
+    // pressed without it ticked.
+    const agreementRef = useRef<HTMLDivElement | null>(null);
+    const [agreementError, setAgreementError] = useState(false);
     const [city, setCity] = useState('');
     const [description, setDescription] = useState('');
     const [homeCategories, setHomeCategories] = useState<string[]>([]);
@@ -75,11 +109,16 @@ export default function AddHome() {
 
     // Airbnb-style wizard state
     const [step, setStep] = useState(1);
-    const TOTAL_STEPS = 10;
+    const TOTAL_STEPS = 11;
     // The photos step. Next greys here until the promised five are added.
     const PHOTOS_STEP = 6;
-    // Safety details, just before the price and review (Airbnb's order).
+    // Safety details, just before the price (Airbnb's order).
     const SAFETY_STEP = 9;
+    // Price sits on its own step before the final review (Airbnb's order).
+    // Next greys here until a price above £0 is entered. The price rule in
+    // lib/listingRules stays keyed to step 10, so nothing about the publish
+    // rules changes.
+    const PRICE_STEP = 10;
     const [propertyType, setPropertyType] = useState('');
     const [privacyType, setPrivacyType] = useState('Entire place');
     const [guests, setGuests] = useState(1);
@@ -293,11 +332,22 @@ export default function AddHome() {
                     // The photos, saved cover-first — so the cover is index 0.
                     setPhotos(((draft.images || []) as string[]).filter(Boolean).map((path) => ({ path, url: getImageUrl(path) })));
                     setCoverIndex(0);
-                    // And the step they were on, so they pick up where they left off.
+                    // The step they were on, so they pick up where they left off.
+                    // On the same device that is remembered in localStorage. On
+                    // ANOTHER device (or after clearing the browser) there is no
+                    // local step, so derive it from what they have already saved
+                    // — the first step still missing something required — rather
+                    // than dropping them back at step 1. Short of the five photos
+                    // the wizard asks for, that is the photos step.
+                    let derived = firstProblemIn(listingFromRow(draft))?.step ?? TOTAL_STEPS;
+                    const photoCount = ((draft.images || []) as string[]).filter(Boolean).length;
+                    if (photoCount < NEW_LISTING_MIN_PHOTOS && derived > PHOTOS_STEP) derived = PHOTOS_STEP;
+                    let resumeStep = derived;
                     try {
                         const saved = Number(window.localStorage.getItem('gg.addhome.step.' + draft.id));
-                        if (saved >= 1 && saved <= TOTAL_STEPS) setStep(saved);
-                    } catch { /* storage unavailable — start at step 1 */ }
+                        if (saved >= 1 && saved <= TOTAL_STEPS) resumeStep = saved;
+                    } catch { /* storage unavailable — use the derived step */ }
+                    setStep(Math.min(Math.max(resumeStep, 1), TOTAL_STEPS));
                     setShowListingForm(true);
                 }
             }
@@ -444,9 +494,38 @@ export default function AddHome() {
         try { window.localStorage.setItem('gg.addhome.step.' + draftId, String(step)); } catch { /* ignore */ }
     }, [draftId, step]);
 
-    // Every step opens at the top of the page (Liam's walkthrough — same as the
-    // hotel wizard).
+    // Every Next and Back opens the new step scrolled to the top of the page.
     useEffect(() => { try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch { /* ignore */ } }, [step]);
+
+    // Make the browser/phone Back gesture step back through the wizard instead
+    // of leaving it in one jump. We keep one spare history entry on top; a Back
+    // press pops it, we step back a page and push the spare again, so the depth
+    // never grows. On the first step there is nothing before it, so Back leaves
+    // for the dashboard — the same place the in-wizard Back button sends step 1.
+    // It always reads the live step, so it coexists with Next/Back (which only
+    // move the step, not history). Resume lands on a step with the spare in
+    // place, so Back works there too.
+    const stepRef = useRef(step);
+    stepRef.current = step;
+    useEffect(() => {
+        const onPop = () => {
+            if (stepRef.current > 1) {
+                const next = stepRef.current - 1;
+                setStep(next);
+                setFormError('');
+                setAgreementError(false);
+                // Keep a spare only while still mid-wizard, so the next Back
+                // steps again. Arriving at the first step we leave no spare, so
+                // one more Back leaves the wizard on its own — we never fire a
+                // navigation inside popstate (the App Router drops those).
+                if (next > 1) window.history.pushState({ ggWizardStep: true }, '');
+            }
+        };
+        window.history.pushState({ ggWizardStep: true }, '');
+        window.addEventListener('popstate', onPop);
+        return () => window.removeEventListener('popstate', onPop);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Warn before leaving only while a change is genuinely unsaved.
     useEffect(() => {
@@ -477,25 +556,42 @@ export default function AddHome() {
 
         // Each photo is shrunk, then uploaded straight away, so it is saved with
         // the draft from this moment on.
+        // iPhones hand over HEIC, which only Safari/iOS can decode — Chrome,
+        // Firefox and Android can't, so compressImage throws on them. Name that
+        // plainly instead of the generic "couldn't be read".
+        const isHeic = (f: File) => /\.(heic|heif)$/i.test(f.name) || /(heic|heif)/i.test(f.type);
         let tooSmall = 0;
+        let heicUnreadable = 0;
         for (const file of files) {
             // Refuse a photo that is too small to look sharp before it is
-            // compressed or uploaded (lib/photoRules). A size we can't read
-            // (0 \u00d7 0) is let through rather than blocked on a reader quirk.
+            // compressed or uploaded (lib/photoRules). The floor is now the
+            // lenient one \u2014 only genuinely tiny images are blocked. A size we
+            // can't read (0 \u00d7 0) is let through rather than blocked on a
+            // reader quirk, but it is logged so we can see read failures.
             const size = await readImageDimensions(file);
             if (size.width && size.height) {
-                const problem = photoDimensionProblem(size.width, size.height);
+                const problem = tinyImageProblem(size.width, size.height);
                 if (problem) {
                     tooSmall += 1;
                     setFormError(problem);
+                    logPhotoIssue('rejected: too small', file, size);
                     continue;
                 }
+            } else {
+                // Could not read the dimensions \u2014 the host is not blocked, but
+                // this is exactly the "stuck at the photos step" signal to catch.
+                logPhotoIssue('could not read dimensions', file, size);
             }
             let ready: File;
             try {
                 ready = await compressImage(file);
             } catch (err) {
-                setFormError('One of those photos couldn\u2019t be read. Try a different one.');
+                // A HEIC that reached here is one this browser can't decode (on
+                // an iPhone it would have converted fine). Say so, rather than
+                // the blank "couldn't be read".
+                if (isHeic(file)) heicUnreadable += 1;
+                else setFormError('One of those photos couldn\u2019t be read. Try a different one.');
+                logPhotoIssue(isHeic(file) ? 'could not read: HEIC not decodable in this browser' : 'could not read: compress failed', file, size, err);
                 continue;
             }
             const path = Date.now() + '_' + generateRandomNumber();
@@ -515,6 +611,14 @@ export default function AddHome() {
         // each in turn — the single-photo case keeps its exact message above.
         if (tooSmall > 1) {
             setFormError(tooSmall + ' photos were too small to look sharp (they need to be at least 1024 × 683 pixels) and weren’t added.');
+        }
+
+        // HEIC takes precedence in the message, because the fix is different:
+        // not a different photo, but a different device or format.
+        if (heicUnreadable > 0) {
+            setFormError(heicUnreadable === 1
+                ? 'That looks like an iPhone photo (HEIC) this browser can’t open. Add it from your phone, or save it as a JPEG first.'
+                : heicUnreadable + ' of those are iPhone photos (HEIC) this browser can’t open. Add them from your phone, or save them as JPEG first.');
         }
 
         setProcessingPhotos(false);
@@ -602,11 +706,15 @@ export default function AddHome() {
 
         // The terms, before anything is submitted — the same rule the server
         // enforces (lib/hostTerms). Only asked of a host with no current
-        // agreement on record.
+        // agreement on record. Publish stays clickable: instead of grey-ing
+        // the button, pressing it with the box unticked highlights the box and
+        // says what to do, the way Airbnb surfaces a missed agreement.
         if (termsOnRecord !== true) {
             const termsMsg = agreementProblem('host', null, versionForTick('host', termsTicked));
             if (termsMsg) {
-                setFormError(termsMsg);
+                setFormError('Tick the Host Agreement to publish.');
+                setAgreementError(true);
+                requestAnimationFrame(() => agreementRef.current?.scrollIntoView({ block: 'center' }));
                 return;
             }
         }
@@ -830,6 +938,17 @@ export default function AddHome() {
                         </button>
                     </div>
                 </div>
+
+                {/* Back at the top-left on desktop, to match the hotel wizard
+                    (a phone has the sticky Back bar above). Next stays at the
+                    foot, bottom-right. */}
+                <button
+                    type="button"
+                    onClick={goBack}
+                    className="hidden sm:inline-flex items-center gap-1 mb-4 text-sm font-semibold text-slate-700 hover:text-black"
+                >
+                    <ChevronLeftIcon className="w-4 h-4" /> Back
+                </button>
 
                 {/* Progress bar */}
                 <div className="flex space-x-1 mb-10">
@@ -1296,25 +1415,32 @@ export default function AddHome() {
                 )}
 
                 {/* Step 10: Price + review */}
-                {step === TOTAL_STEPS && (
-                    <form onSubmit={handleListingSubmit}>
+                {/* Step 10: Price — on its own screen, before the review (Airbnb's
+                    order). Next greys until a price above £0 is entered; the helper
+                    line under the field says so. The price rule itself is unchanged. */}
+                {step === PRICE_STEP && (
+                    <div>
                         <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Now, set your price</h2>
                         <p className="text-slate-600 mb-6">You can change this anytime.</p>
-                        <div className="flex items-center border-2 rounded-2xl px-5 py-4 mb-3 max-w-xs">
+                        <div className="flex items-center border-2 rounded-2xl px-5 py-4 mb-2 max-w-xs">
                             <span className="text-3xl font-black text-slate-900 mr-2">£</span>
                             <input
+                                ref={priceInputRef}
                                 type="number"
                                 value={price}
                                 onChange={(e) => setPrice(e.target.value)}
                                 placeholder="0"
                                 className="text-3xl font-black text-slate-900 outline-none w-full"
-                                required
                             />
                             <span className="text-slate-500 ml-2">/ night</span>
                         </div>
 
+                        {!(Number(price) > 0) && (
+                            <p className="text-sm font-medium text-slate-500 mb-6">Enter a nightly price to continue.</p>
+                        )}
+
                         {Number(price) > 0 && (
-                            <div className="bg-slate-50 rounded-2xl border p-5 mb-8 max-w-xs text-sm">
+                            <div className="bg-slate-50 rounded-2xl border p-5 mb-4 max-w-xs text-sm">
                                 <div className="flex justify-between text-slate-600 mb-2">
                                     <span>Guest pays</span>
                                     <span className="font-medium text-slate-900">{formatGBP(price)} / night</span>
@@ -1336,6 +1462,15 @@ export default function AddHome() {
                                 </p>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* Step 11: Review + Host Agreement + Publish. The price is now set
+                    on its own step, so this screen only confirms and publishes. */}
+                {step === TOTAL_STEPS && (
+                    <form onSubmit={handleListingSubmit}>
+                        <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Review and publish</h2>
+                        <p className="text-slate-600 mb-6">A last look before it goes to us to check over.</p>
 
                         <div className="bg-slate-50 rounded-2xl border p-6 mb-6">
                             <h3 className="font-bold text-slate-900 mb-3">Review your listing</h3>
@@ -1345,6 +1480,7 @@ export default function AddHome() {
                                 <li><span className="font-medium text-slate-800">Guests:</span> {plural(guests, 'guest')} · {plural(bedrooms, 'bedroom')} · {plural(beds, 'bed')} · {plural(bathrooms, 'bathroom')}</li>
                                 <li><span className="font-medium text-slate-800">Amenities:</span> {amenities.length ? amenities.join(', ') : 'None selected'}</li>
                                 <li><span className="font-medium text-slate-800">Title:</span> {title || '—'}</li>
+                                <li><span className="font-medium text-slate-800">Price:</span> {Number(price) > 0 ? `${formatGBP(price)} / night` : '—'}</li>
                                 <li><span className="font-medium text-slate-800">Discounts:</span> {[
                                     newListingPromo && 'New listing 20%',
                                     lastMinuteDiscount && 'Last-minute 5%',
@@ -1362,21 +1498,24 @@ export default function AddHome() {
                             in /api/listings/publish). The underlined link opens the
                             full Host Agreement (/terms/hosts). */}
                         {termsOnRecord === false && (
-                            <div className="mb-4">
+                            <div
+                                ref={agreementRef}
+                                className={'mb-4 rounded-xl transition ' + (agreementError ? 'ring-2 ring-red-400 ring-offset-2 p-2 -m-2' : '')}
+                            >
                                 <AgreementTick
                                     doc="host"
                                     checked={termsTicked}
-                                    onChange={(v) => { setTermsTicked(v); setFormError(''); }}
+                                    onChange={(v) => { setTermsTicked(v); setFormError(''); setAgreementError(false); }}
                                 />
                             </div>
                         )}
 
                         <button
                             type="submit"
-                            // Stays disabled until the Host Agreement is ticked
-                            // (when one is owed), the same rule as the provider
-                            // sign-ups' Submit.
-                            disabled={submitting || (termsOnRecord === false && !termsTicked)}
+                            // Stays clickable: pressing it without the Host Agreement
+                            // ticked highlights the box and says what to do, rather
+                            // than sitting greyed with no explanation.
+                            disabled={submitting}
                             className="w-full py-4 bg-emerald-700 text-white font-bold rounded-xl hover:bg-emerald-800 transition disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                             {submitting ? 'Publishing...' : 'Publish listing'}
@@ -1386,16 +1525,11 @@ export default function AddHome() {
 
                 {formError && step !== TOTAL_STEPS && <p className="text-red-600 text-sm mt-6">{formError}</p>}
 
-                {/* Nav buttons (all steps except the last, which has its own submit button above) */}
+                {/* Nav buttons (all steps except the last, which has its own submit
+                    button above). Back is at the top-left now, so the foot holds
+                    only Next, bottom-right. */}
                 {step !== TOTAL_STEPS && (
                     <div className="flex items-center gap-3 mt-10 pt-6 border-t">
-                        <button
-                            type="button"
-                            onClick={goBack}
-                            className="hidden sm:flex items-center text-sm font-semibold text-slate-700 hover:text-black"
-                        >
-                            <ChevronLeftIcon className="w-4 h-4 mr-1" /> Back
-                        </button>
                         {/* The photos step promises "at least 5", so Next greys until
                             there are five — the warning says what's short, bottom-left,
                             the same greyed-Next pattern the provider sign-up uses. The
@@ -1408,31 +1542,31 @@ export default function AddHome() {
                             </p>
                         )}
                         <div className="flex-1" />
-                        <button
-                            type="button"
-                            onClick={goNext}
-                            disabled={step === PHOTOS_STEP && photos.length < NEW_LISTING_MIN_PHOTOS}
-                            className={'px-8 py-3 font-bold rounded-xl transition '
-                                + (step === PHOTOS_STEP && photos.length < NEW_LISTING_MIN_PHOTOS
-                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                    : 'bg-slate-900 hover:bg-black text-white')}
-                        >
-                            Next
-                        </button>
+                        {(() => {
+                            // Next greys on the photos step until there are five, and
+                            // on the price step until a price above £0 is entered.
+                            const nextBlocked =
+                                (step === PHOTOS_STEP && photos.length < NEW_LISTING_MIN_PHOTOS)
+                                || (step === PRICE_STEP && !(Number(price) > 0));
+                            return (
+                                <button
+                                    type="button"
+                                    onClick={goNext}
+                                    disabled={nextBlocked}
+                                    className={'px-8 py-3 font-bold rounded-xl transition '
+                                        + (nextBlocked
+                                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                            : 'bg-slate-900 hover:bg-black text-white')}
+                                >
+                                    Next
+                                </button>
+                            );
+                        })()}
                     </div>
                 )}
                 {/* The first screen is where a new host is still deciding, so the
                     questions they ask sit under it — not on the later steps. */}
                 {step === 1 && <RecruitFaq audience="host" className="mt-16 pb-8" />}
-                {step === TOTAL_STEPS && (
-                    <button
-                        type="button"
-                        onClick={goBack}
-                        className="hidden sm:flex items-center text-sm font-semibold text-slate-700 hover:text-black mt-6"
-                    >
-                        <ChevronLeftIcon className="w-4 h-4 mr-1" /> Back
-                    </button>
-                )}
             </div>
         );
     }

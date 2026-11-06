@@ -21,7 +21,7 @@ import PushPrompt from '@/components/pwa/PushPrompt';
 import { AttachPhotoButton, PendingPhotos, MessagePhotoGrid } from '@/components/messages/MessagePhotos';
 import type { PreparedPhoto } from '@/lib/preparePhoto';
 import { messagePreview } from '@/lib/messagePhotos';
-import { Search, Inbox, Send, Zap, Phone, ExternalLink, ChevronLeft, Info } from 'lucide-react';
+import { Search, Inbox, Send, Zap, Phone, ExternalLink, ChevronLeft, Info, Sparkles, Loader2 } from 'lucide-react';
 
 // A conversation's identity is now "kind:id" — booking, enquiry or order — so the
 // one inbox can carry all three. This splits it back apart for routing.
@@ -72,6 +72,10 @@ export default function MessagesInboxPage() {
     // Photos chosen for the next message (booking threads only), already
     // shrunk, turned to JPEG and stripped of location in the browser.
     const [photos, setPhotos] = useState<PreparedPhoto[]>([]);
+    // "Suggest reply": a draft put into the box for the host to edit. Never sent
+    // by itself. `aiNotes` are what the draft says the host should confirm.
+    const [aiBusy, setAiBusy] = useState(false);
+    const [aiNotes, setAiNotes] = useState<string[] | null>(null);
     const clearPhotos = () => setPhotos((prev) => { prev.forEach((p) => URL.revokeObjectURL(p.previewUrl)); return []; });
     // Sending a message is one of the moments notifications are offered: the
     // card appears above the composer after the first send (PushPrompt decides
@@ -205,6 +209,7 @@ export default function MessagesInboxPage() {
         setThreadLoading(true);
         setThreadError('');
         clearPhotos();
+        setAiNotes(null);
 
         const { kind, id } = splitKey(activeId);
         const load = async () => {
@@ -606,9 +611,11 @@ export default function MessagesInboxPage() {
         const { kind, id } = splitKey(activeId);
         setSending(true);
 
-        if (kind === 'booking' && photos.length > 0) {
+        if (photos.length > 0) {
             // Photos go through the server: they land in a private bucket only
-            // it can write, and it checks every file again.
+            // it can write, and it checks every file again. A booking has its
+            // own photos route (its words go straight from the browser); an
+            // order or enquiry sends photos to the same route as its words.
             const form = new FormData();
             form.append('body', outgoing);
             photos.forEach((p) => {
@@ -619,7 +626,8 @@ export default function MessagesInboxPage() {
             });
             let d: any = null;
             try {
-                const res = await fetch('/api/messages/threads/' + id + '/photos', { method: 'POST', body: form });
+                const url = kind === 'booking' ? '/api/messages/threads/' + id + '/photos' : THREAD_GET[kind](id);
+                const res = await fetch(url, { method: 'POST', body: form });
                 d = await res.json().catch(() => null);
                 if (!res.ok && !d) d = { ok: false, error: res.status === 413 ? 'Those photos are too large to send together. Try fewer at once.' : null };
             } catch {
@@ -634,9 +642,14 @@ export default function MessagesInboxPage() {
                 setThread((prev: any) => prev && !prev.messages.some((m: any) => m.id === d.message.id)
                     ? { ...prev, messages: prev.messages.concat(d.message) } : prev);
             }
-            markRead(activeId);
-            notify('new_message', id, outgoing);
-            setAskPush(true);
+            if (kind === 'booking') {
+                markRead(activeId);
+                notify('new_message', id, outgoing);
+                setAskPush(true);
+            } else {
+                // The route sent the email and marked the thread read.
+                recountBadges();
+            }
         } else if (kind === 'booking') {
             const { error } = await supabase.from('messages').insert({
                 booking_id: id,
@@ -691,6 +704,7 @@ export default function MessagesInboxPage() {
 
         setText('');
         clearPhotos();
+        setAiNotes(null);
         setShowQuick(false);
 
         // Reflect it straight away in the list, so the ordering, the needs-reply
@@ -715,9 +729,53 @@ export default function MessagesInboxPage() {
         );
     };
 
-    // Photos are for booking threads, and for the people who may see them
-    // (not a companion on the trip) — the server says which.
-    const canAttach = !!thread && splitKey(activeId).kind === 'booking' && thread.photosVisible === true;
+    const suggestReply = async () => {
+        const { kind, id } = splitKey(activeId);
+        if (kind !== 'booking' || aiBusy) return;
+        if (text.trim() && !window.confirm('Replace what you’ve written with a suggested reply?')) return;
+        setAiBusy(true);
+        try {
+            const res = await fetch('/api/messages/threads/' + id + '/suggest-reply', { method: 'POST' });
+            const d = await res.json().catch(() => null);
+            if (!d || !d.ok) {
+                toast.error((d && d.error) || 'Couldn’t draft a reply. Try again.', { theme: 'colored' });
+            } else {
+                // Into the box, for the host to read and change. Not sent.
+                setText(d.reply);
+                setAiNotes(Array.isArray(d.unconfirmed) ? d.unconfirmed : []);
+            }
+        } catch {
+            toast.error('Couldn’t draft a reply. Try again.', { theme: 'colored' });
+        }
+        setAiBusy(false);
+    };
+    const aiBar = thread && thread.aiSuggest ? (
+        <div className="mb-2">
+            <button
+                type="button"
+                onClick={suggestReply}
+                disabled={aiBusy || sending}
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-900 hover:text-slate-900 disabled:opacity-50"
+            >
+                {aiBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {aiBusy ? 'Drafting…' : 'Suggest reply'}
+            </button>
+            {aiNotes && (
+                <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600" data-testid="ai-notes">
+                    <p>Drafted for you from the conversation and your listing. Check it, change it, then send it yourself.</p>
+                    {aiNotes.length > 0 && (
+                        <ul className="mt-1 list-disc pl-4 text-amber-800">
+                            {aiNotes.map((n, i) => <li key={i}>Confirm before sending: {n}</li>)}
+                        </ul>
+                    )}
+                </div>
+            )}
+        </div>
+    ) : null;
+
+    // Photos are for the people in the conversation (not a companion on a
+    // trip) — every thread's route says which with photosVisible.
+    const canAttach = !!thread && thread.photosVisible === true;
     const addPhotos = (more: PreparedPhoto[]) => setPhotos((prev) => prev.concat(more));
     const removePhoto = (i: number) => setPhotos((prev) => {
         const gone = prev[i];
@@ -907,6 +965,7 @@ export default function MessagesInboxPage() {
                         )}
 
                         {askPush && <PushPrompt context="message" className="mb-2" />}
+                        {aiBar}
                         <PendingPhotos photos={photos} onRemove={removePhoto} />
                         <div className="flex items-end gap-2">
                             {canAttach && (
@@ -1345,6 +1404,7 @@ export default function MessagesInboxPage() {
                                     )}
 
                                     {askPush && <PushPrompt context="message" className="mb-2" />}
+                                    {aiBar}
                                     <PendingPhotos photos={photos} onRemove={removePhoto} />
                                     <div className="flex items-end gap-2">
                                         {canAttach && (

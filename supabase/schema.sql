@@ -760,6 +760,7 @@ CREATE TABLE IF NOT EXISTS "public"."notification_preferences" (
     "new_message" boolean DEFAULT true NOT NULL,
     "booking_reminders" boolean DEFAULT true NOT NULL,
     "review_prompts" boolean DEFAULT true NOT NULL,
+    "listing_reminders" boolean DEFAULT true NOT NULL,
     "marketing" boolean DEFAULT false NOT NULL,
     "unsubscribe_token" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
