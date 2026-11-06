@@ -107,7 +107,7 @@ test('the booking widget only ever gets the nights, never a platform or a feed',
 });
 
 test('the host calendar still asks for and uses the detail', () => {
-    const cal = read('app/dashboard/calendar/page.tsx');
+    const cal = read('components/dashboard/CottageCalendarClient.tsx');
     assert.match(cal, /ev\.platform/);
     assert.match(cal, /ev\.platformName/);
 });

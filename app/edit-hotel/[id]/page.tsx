@@ -1,5 +1,8 @@
 export const dynamic = "force-dynamic";
 
+// A private editor, never indexed.
+export const metadata = { robots: { index: false, follow: false } };
+
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
