@@ -174,6 +174,79 @@ async function main() {
         return { checkIn: String(b.check_in).slice(0, 10), checkOut: co.toISOString().slice(0, 10), guests: b.guests, children: b.children || 0, pets: b.pets || 0 };
     };
 
+    const addDays = (key, n) => { const d = new Date(String(key).slice(0, 10) + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+    const nightsOf = (b) => Math.round((new Date(String(b.check_out).slice(0, 10)) - new Date(String(b.check_in).slice(0, 10))) / 86400000);
+
+    /* ---- cx: the C2 walls a date change now passes, like a new booking ---- */
+    // These use cg1's booking non-destructively (every attempt is refused or put
+    // back) before cg1's own scenario runs, plus a throwaway booking for the
+    // cancellation anchor.
+
+    scenario('cx1', 'A date change cannot move a stay onto a host-blocked night (availability wall, C2)');
+    {
+        const b = await booking(bookings.cg1);
+        const n = nightsOf(b);
+        // A night the host blocks, well clear of every seeded stay.
+        const blockKey = addDays(b.check_out, 120);
+        await db.insert('calendar_overrides', [{ listing_id: b.listing_id, date: blockKey, is_blocked: true }]);
+        // Move the stay (same length → zero delta, so only availability can stop
+        // it) onto a range that spans the blocked night.
+        const res = await post('/api/bookings/change', guest, {
+            bookingId: bookings.cg1, checkIn: blockKey, checkOut: addDays(blockKey, n),
+            guests: b.guests, children: b.children || 0, pets: b.pets || 0,
+        });
+        check('the move onto a host-blocked night is refused (409 taken, not applied)', res.status === 409, res.status + ' ' + JSON.stringify(res.body).slice(0, 140));
+        const after = await booking(bookings.cg1);
+        check('and the booking is unchanged', String(after.check_in).slice(0, 10) === String(b.check_in).slice(0, 10));
+        await db.remove('calendar_overrides', '?listing_id=eq.' + b.listing_id + '&date=eq.' + blockKey);
+    }
+
+    scenario('cx2', 'A zero-cost MOVE on a request-to-book listing needs host approval (C2)');
+    {
+        const b = await booking(bookings.cg1);
+        const n = nightsOf(b);
+        await db.update('listings', '?id=eq.' + b.listing_id, { instant_book: false });
+        // Free far-future nights, same length → zero delta.
+        const moveIn = addDays(b.check_out, 200);
+        const res = await post('/api/bookings/change', guest, {
+            bookingId: bookings.cg1, checkIn: moveIn, checkOut: addDays(moveIn, n),
+            guests: b.guests, children: b.children || 0, pets: b.pets || 0,
+        });
+        const after = await booking(bookings.cg1);
+        check('the move is accepted as a request, NOT applied instantly', res.status === 200 && res.body.ok && String(after.check_in).slice(0, 10) === String(b.check_in).slice(0, 10), res.status + ' ' + JSON.stringify(res.body).slice(0, 140));
+        const pend = await db.select('booking_change_requests', '?booking_id=eq.' + bookings.cg1 + '&status=eq.pending&select=id');
+        check('…a pending change is waiting for the host', pend.length > 0);
+        // Put everything back: withdraw the request and restore instant book.
+        if (res.body && res.body.id) await post('/api/bookings/change/respond', guest, { changeId: res.body.id, action: 'decline' });
+        await db.update('listings', '?id=eq.' + b.listing_id, { instant_book: true });
+    }
+
+    scenario('cx3', 'The cancellation window anchors on the original check-in, not a later move (C2)');
+    {
+        const ref = await booking(bookings.cg1);
+        const origIn = addDays(ref.check_out, 300);
+        const [tmp] = await db.insert('bookings', {
+            listing_id: ref.listing_id, guest_id: ref.guest_id, host_id: ref.host_id,
+            check_in: origIn, check_out: addDays(origIn, 3),
+            guests: 1, adults: 1, total_price: 300, status: 'confirmed', payment_status: 'paid',
+            amount_paid: 300, amount_refunded: 0, commission_rate: 10,
+            cancellation_policy: 'Firm', non_refundable: false, paid_at: new Date().toISOString(),
+        });
+        const t1 = await booking(tmp.id);
+        check('earliest_check_in is stamped = check_in at creation', String(t1.earliest_check_in).slice(0, 10) === origIn, String(t1.earliest_check_in));
+        // Move LATER — the anchor must NOT follow.
+        const later = addDays(origIn, 60);
+        await db.update('bookings', '?id=eq.' + tmp.id, { check_in: later, check_out: addDays(later, 3) });
+        const t2 = await booking(tmp.id);
+        check('a move LATER keeps the original anchor', String(t2.earliest_check_in).slice(0, 10) === origIn, String(t2.earliest_check_in));
+        // Move EARLIER — the anchor lowers to match the sooner stay.
+        const earlier = addDays(origIn, -10);
+        await db.update('bookings', '?id=eq.' + tmp.id, { check_in: earlier, check_out: addDays(earlier, 3) });
+        const t3 = await booking(tmp.id);
+        check('a move EARLIER lowers the anchor', String(t3.earliest_check_in).slice(0, 10) === earlier, String(t3.earliest_check_in));
+        await db.remove('bookings', '?id=eq.' + tmp.id);
+    }
+
     /* ---- cg1 ---- */
 
     scenario('cg1', 'Guest shortens a deposit booking — balance drops, no card refund');
