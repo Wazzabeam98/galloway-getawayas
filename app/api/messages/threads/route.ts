@@ -48,7 +48,7 @@ export async function GET() {
     // Their own bookings, as guest or host.
     const { data: own } = await admin
         .from('bookings')
-        .select('id, listing_id, guest_id, host_id, check_in, check_out, created_at, status')
+        .select('id, listing_id, room_type_id, guest_id, host_id, check_in, check_out, created_at, status')
         .or('guest_id.eq.' + uid + ',host_id.eq.' + uid);
 
     // Trips someone has added them to.
@@ -63,7 +63,7 @@ export async function GET() {
     const { data: companionBookings } = companionIds.length
         ? await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, created_at, status')
+            .select('id, listing_id, room_type_id, guest_id, host_id, check_in, check_out, created_at, status')
             .in('id', companionIds)
         : { data: [] };
 
@@ -71,7 +71,7 @@ export async function GET() {
     const { data: helping } = messageListings.length
         ? await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, created_at, status')
+            .select('id, listing_id, room_type_id, guest_id, host_id, check_in, check_out, created_at, status')
             .in('listing_id', messageListings)
         : { data: [] };
 
@@ -99,6 +99,36 @@ export async function GET() {
     (listings || []).forEach((l: any) => {
         listingMap[l.id] = l;
     });
+
+    // Hotel bookings have no listing — their place is a room type in a hotel.
+    // Resolve the title and photo the same way, keyed by room_type_id, so a
+    // listing-less booking's thread reads "Hotel name — Room type" with the
+    // hotel's photo rather than a blank card. Behind the launch flag.
+    const roomTypeIds = Array.from(new Set(bookings.map((b) => b.room_type_id).filter(Boolean)));
+    const hotelRoomMap: Record<string, any> = {};
+    if (roomTypeIds.length) {
+        const { data: roomRows } = await admin
+            .from('hotel_room_types')
+            .select('id, name, hotel_id')
+            .in('id', roomTypeIds);
+        const hotelIds = Array.from(new Set((roomRows || []).map((r: any) => r.hotel_id).filter(Boolean)));
+        const { data: hotelRows } = hotelIds.length
+            ? await admin.from('hotels').select('id, name, images, owner_id').in('id', hotelIds)
+            : { data: [] };
+        const hById: Record<string, any> = {};
+        (hotelRows || []).forEach((h: any) => { hById[h.id] = h; });
+        (roomRows || []).forEach((r: any) => {
+            const h = hById[r.hotel_id];
+            hotelRoomMap[r.id] = {
+                id: r.id,
+                title: h ? `${h.name} — ${r.name}` : r.name,
+                images: h?.images || null,
+                host_id: h?.owner_id || null,
+            };
+        });
+    }
+    // One lookup for both kinds: a booking's place is its listing or its room type.
+    const placeOf = (b: any) => (b.listing_id ? listingMap[b.listing_id] : hotelRoomMap[b.room_type_id]) || null;
 
     // The co-hosts who answer messages on each property, for the stacked
     // photos on a row (Airbnb shows the co-host's face beside the guest's).
@@ -200,7 +230,7 @@ export async function GET() {
     const todayKey = londonDayKey();
 
     const conversations: any[] = bookings.map((b) => {
-        const listing = listingMap[b.listing_id];
+        const listing = placeOf(b);
         const otherId = otherOf(b);
         const viewerIsGuest = !teamOn[b.id];
         // Everyone answering for the property: an answer from any of them

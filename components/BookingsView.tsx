@@ -12,7 +12,10 @@ import { stayHasEnded, stayHasStarted } from '@/lib/stayWindow';
 
 interface Booking {
     id: string;
-    listing_id: string;
+    listing_id: string | null;
+    // A hotel booking carries a room type instead of a listing. Everything on
+    // this screen — the card, the money, the actions — keys off whichever it is.
+    room_type_id?: string | null;
     guest_id: string;
     check_in: string;
     check_out: string;
@@ -54,7 +57,10 @@ export default function BookingsView({
     const now = new Date();
     const reviewedSet = new Set(reviewedBookingIds);
 
-    const checkOutTimeFor = (b: Booking) => listingMap[b.listing_id]?.check_out_time;
+    // A booking's property key: its listing, or its hotel room type. The whole
+    // view looks everything up by this — a hotel booking has no listing_id.
+    const keyOf = (b: Booking) => b.listing_id || b.room_type_id || '';
+    const checkOutTimeFor = (b: Booking) => listingMap[keyOf(b)]?.check_out_time;
 
     // A stay belongs under Upcoming until the guest is actually due out, so a
     // booking made for tonight is where the host looks for it, and a stay
@@ -92,7 +98,7 @@ export default function BookingsView({
     }, []);
 
     const BookingRow = ({ booking }: { booking: Booking }) => {
-        const listing = listingMap[booking.listing_id];
+        const listing = listingMap[keyOf(booking)];
         // The rate agreed when the booking was made wins. Older bookings
         // predating that were all on the listing's rate.
         const commission = booking.commission_rate !== null && booking.commission_rate !== undefined
@@ -102,7 +108,7 @@ export default function BookingsView({
         // Answering, cancelling and refunding are the owner's alone. A
         // co-host with can_bookings sees the booking and can message about
         // it, but these routes turn them away with a 403.
-        const canAnswer = ownedListingIds.indexOf(booking.listing_id) !== -1;
+        const canAnswer = ownedListingIds.indexOf(keyOf(booking)) !== -1;
         const showConfirmDecline = booking.status === 'pending' && canAnswer;
         // Callable off right up to the end of arrival day. Once the guest is
         // in, a full refund is the wrong instrument — Refund guest is.

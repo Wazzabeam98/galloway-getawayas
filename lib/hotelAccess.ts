@@ -39,6 +39,46 @@ function ownerRow(hotelId: string): HotelAccess {
     };
 }
 
+// Every hotel this person can act on, and what they may do with each — the hotel
+// twin of lib/access accessibleListings. An owner can do everything; a co-host
+// does what they were given. Reads with the service role (hotel_access is
+// service-role-only, and a co-host is not the owner so RLS would hide rows).
+export async function accessibleHotels(userId: string): Promise<HotelAccess[]> {
+    if (!userId) return [];
+    const admin = adminClient();
+    const out: HotelAccess[] = [];
+
+    const { data: owned } = await admin.from('hotels').select('id').eq('owner_id', userId);
+    (owned || []).forEach((h: any) => out.push(ownerRow(h.id)));
+
+    const { data: granted } = await admin
+        .from('hotel_access')
+        .select('id, hotel_id, role, can_calendar, can_messages, can_bookings, can_listing, can_earnings')
+        .eq('user_id', userId)
+        .eq('status', 'active');
+    (granted || []).forEach((a: any) => {
+        if (out.some((o) => o.hotelId === a.hotel_id)) return; // owning beats a grant
+        out.push({
+            hotelId: a.hotel_id,
+            accessId: a.id,
+            isOwner: false,
+            role: a.role === 'staff' ? 'staff' : 'co_host',
+            can_calendar: !!a.can_calendar,
+            can_messages: !!a.can_messages,
+            can_bookings: !!a.can_bookings,
+            can_listing: !!a.can_listing,
+            can_earnings: !!a.can_earnings,
+        });
+    });
+    return out;
+}
+
+// The hotel ids this person may use for a given purpose. Mirrors listingIdsFor.
+export async function hotelIdsFor(userId: string, permission: HotelPermission): Promise<string[]> {
+    const all = await accessibleHotels(userId);
+    return all.filter((a) => a[permission]).map((a) => a.hotelId);
+}
+
 // One hotel, one purpose. Returns null when they may not. Mirrors checkListing.
 export async function checkHotel(
     userId: string,
