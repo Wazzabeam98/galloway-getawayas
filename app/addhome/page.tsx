@@ -110,6 +110,10 @@ export default function AddHome() {
     // Airbnb-style wizard state
     const [step, setStep] = useState(1);
     const TOTAL_STEPS = 11;
+    // The address step. Next greys here until the street, town and a valid
+    // postcode are all in — the same "Next is dark only when the step is done"
+    // the photos and price steps use, so a postcode can't be skipped past.
+    const ADDRESS_STEP = 3;
     // The photos step. Next greys here until the promised five are added.
     const PHOTOS_STEP = 6;
     // Safety details, just before the price (Airbnb's order).
@@ -145,7 +149,9 @@ export default function AddHome() {
     const [latitude, setLatitude] = useState<number | null>(null);
     const [longitude, setLongitude] = useState<number | null>(null);
     const [selectedHighlights, setSelectedHighlights] = useState<string[]>([]);
-    const [newListingPromo, setNewListingPromo] = useState(true);
+    // Nothing is pre-ticked on the discounts step — the host chooses each one.
+    // (Was on by default; Liam asked for a clean slate, 6 Nov 2026.)
+    const [newListingPromo, setNewListingPromo] = useState(false);
     const [lastMinuteDiscount, setLastMinuteDiscount] = useState(false);
     const [weeklyDiscount, setWeeklyDiscount] = useState(false);
     const [monthlyDiscount, setMonthlyDiscount] = useState(false);
@@ -1546,7 +1552,8 @@ export default function AddHome() {
                             // Next greys on the photos step until there are five, and
                             // on the price step until a price above £0 is entered.
                             const nextBlocked =
-                                (step === PHOTOS_STEP && photos.length < NEW_LISTING_MIN_PHOTOS)
+                                (step === ADDRESS_STEP && problemAtStep(ADDRESS_STEP) != null)
+                                || (step === PHOTOS_STEP && photos.length < NEW_LISTING_MIN_PHOTOS)
                                 || (step === PRICE_STEP && !(Number(price) > 0));
                             return (
                                 <button
