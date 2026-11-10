@@ -5,6 +5,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
 import AutoTextarea from '@/components/AutoTextarea';
 import { BigTextInput, bigFieldCls, wizardAreaCls } from '@/components/services/wizardKit';
+import ContactNote, { hasContactDetails } from '@/components/listing-editor/ContactNote';
 
 // The host-facing editors for a listing's arrival details — the wifi,
 // directions and what3words cards in the editor's Arrival section. Every field is
@@ -171,12 +172,13 @@ export function DirectionsCard({ listingId }: { listingId: string }) {
                     footer={
                         <div className="flex items-center justify-end gap-3">
                             {arrival.error && <span className="text-sm text-red-600">{arrival.error}</span>}
-                            <PanelSave onClick={save} disabled={arrival.saving} />
+                            <PanelSave onClick={save} disabled={arrival.saving || hasContactDetails(dirs)} />
                         </div>
                     }>
                     <AutoTextarea id="arrival-directions" aria-label="Directions" value={dirs} onChange={(e) => setDirs(e.target.value)} rows={3}
                         placeholder="Turn at the red postbox, the track is bumpy — park on the gravel by the blue door."
                         className={wizardAreaCls} />
+                    <ContactNote text={dirs} />
                 </EditorPanel>
             )}
         </>

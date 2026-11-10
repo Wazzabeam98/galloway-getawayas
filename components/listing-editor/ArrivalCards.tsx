@@ -6,6 +6,7 @@ import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-
 import AutoTextarea from '@/components/AutoTextarea';
 import { useQuestionSheets } from '@/components/listing-editor/questionSheets';
 import { NumberStepper, wizardAreaCls, bigFieldCls } from '@/components/services/wizardKit';
+import ContactNote, { hasContactDetails } from '@/components/listing-editor/ContactNote';
 import {
     CHECKOUT_TASKS, CHECKOUT_NOTE_MAX, MAX_PETS_CAP, DEFAULT_MAX_PETS, checkoutTaskLabels,
     SAFETY_GROUPS, SAFETY_DETAILS_MAX, sharedSpacesForced, guestSafetyProblem,
@@ -77,7 +78,7 @@ export function HouseRulesCard({ rules, onSave }: { rules: HouseRules; onSave: (
         <>
             <EditorCard title="House rules" summary={houseRulesSummary(rules)} onClick={() => { setD(rules); setOpen(true); }} />
             {open && (
-                <EditorPanel title="What are your house rules?" onClose={() => setOpen(false)} footer={<PanelSave onClick={async () => { if (await saved(onSave(d))) setOpen(false); }} />}>
+                <EditorPanel title="What are your house rules?" onClose={() => setOpen(false)} footer={<PanelSave disabled={hasContactDetails(d.additionalRules)} onClick={async () => { if (await saved(onSave(d))) setOpen(false); }} />}>
                     <div className="border-2 border-slate-200 rounded-2xl divide-y">
                         <div className="p-4">
                             <div className="flex items-center justify-between gap-3">
@@ -119,6 +120,7 @@ export function HouseRulesCard({ rules, onSave }: { rules: HouseRules; onSave: (
                     <h3 className="text-base font-semibold text-slate-800 mt-6 mb-2">Additional rules</h3>
                     <AutoTextarea value={d.additionalRules} onChange={(e) => set({ additionalRules: e.target.value })} rows={4}
                         aria-label="Additional rules" placeholder="Share anything else you expect from guests..." className={wizardAreaCls} />
+                    <ContactNote text={d.additionalRules} />
                 </EditorPanel>
             )}
         </>
@@ -140,7 +142,7 @@ export function CheckoutInstructionsCard({ tasks, note, onSave }: { tasks: strin
         <>
             <EditorCard title="Checkout instructions" summary={summary} onClick={() => { setT(tasks); setN(note); setOpen(true); }} />
             {open && (
-                <EditorPanel title="What should guests do before they leave?" onClose={() => setOpen(false)} footer={<PanelSave onClick={async () => { if (await saved(onSave(t, n))) setOpen(false); }} />}>
+                <EditorPanel title="What should guests do before they leave?" onClose={() => setOpen(false)} footer={<PanelSave disabled={hasContactDetails(n)} onClick={async () => { if (await saved(onSave(t, n))) setOpen(false); }} />}>
                     <div className="space-y-3">
                         {CHECKOUT_TASKS.map((task) => {
                             const on = t.indexOf(task.key) !== -1;
@@ -159,6 +161,7 @@ export function CheckoutInstructionsCard({ tasks, note, onSave }: { tasks: strin
                     <label htmlFor="checkout-note" className="mt-6 block text-base font-semibold text-slate-900 mb-2">Anything else</label>
                     <AutoTextarea id="checkout-note" value={n} onChange={(e) => setN(e.target.value)} rows={3} maxLength={CHECKOUT_NOTE_MAX}
                         placeholder="Leave the keys on the kitchen table." className={wizardAreaCls} />
+                    <ContactNote text={n} />
                 </EditorPanel>
             )}
         </>
