@@ -792,6 +792,14 @@ export default function AddHome() {
                     setFormError(msg);
                     return;
                 }
+                // Contact details caught on the server: send the host to the
+                // title/description step with the message (a backstop — the
+                // publish gate above usually catches it first).
+                if (publishBody && publishBody.contactField) {
+                    setStep(7);
+                    setFormError(msg);
+                    return;
+                }
                 toast.error(msg, { theme: 'colored' });
                 setFormError(msg);
                 return;
@@ -1302,7 +1310,7 @@ export default function AddHome() {
                                 maxLength={80}
                                 className="w-full p-4 border rounded-xl text-lg"
                             />
-                            <ContactNote text={title} />
+                            <ContactNote text={title} label="title" />
                         </div>
                         <div>
                             <h2 className="text-2xl font-extrabold text-slate-900 mb-2">Next, let's describe your house</h2>
@@ -1348,7 +1356,7 @@ export default function AddHome() {
                                 placeholder="What makes your place special?"
                                 className="w-full p-4 border rounded-xl"
                             />
-                            <ContactNote text={description} />
+                            <ContactNote text={description} label="description" />
                         </div>
                     </div>
                 )}

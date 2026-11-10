@@ -21,7 +21,7 @@ export default function DescriptionCard({ description, onSave }: { description: 
                     footer={<PanelSave disabled={hasContactDetails(draft)} onClick={async () => { if (await saved(onSave(draft))) setOpen(false); }} />}>
                     <AutoTextarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={8}
                         aria-label="Description" className={wizardAreaCls} />
-                    <ContactNote text={draft} />
+                    <ContactNote text={draft} label="description" />
                 </EditorPanel>
             )}
         </>

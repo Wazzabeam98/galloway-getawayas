@@ -16,7 +16,7 @@
 // a published listing would break the one feature that makes the wizard
 // survivable.
 
-import { listingContactKind, LISTING_CONTACT_MESSAGE } from './listingContact';
+import { listingContactKind, LISTING_CONTACT_MESSAGE, listingContactProblem } from './listingContact';
 
 // Every real UK format, from "M1 1AA" to "EC1A 1BB". Used to catch a town name
 // typed into the postcode box, not to prove the place exists.
@@ -165,6 +165,10 @@ export interface Rule {
     step: number;
     message: string;
     failed: (listing: ListingForRules) => boolean;
+    // A rule checked ONLY when the host presses Publish (or edits a live
+    // listing), never as a per-step gate on Next. Drafts save and move on
+    // freely; the wall is at publish. See the contact-details rule.
+    publishOnly?: boolean;
 }
 
 const text = (value: string | null | undefined): string => String(value || '').trim();
@@ -239,6 +243,11 @@ export const PUBLISH_RULES: Rule[] = [
         // the admin queue and approval read it from here too.
         key: 'contact_details',
         step: 7,
+        // Publish-only: a host can type anything into a draft and keep going;
+        // this is only checked when they submit for review (and when a live
+        // listing is edited). The message is replaced per-field at the surface
+        // (firstPublishProblem) so it names the field and what to remove.
+        publishOnly: true,
         message: 'Your title or description includes contact details. ' + LISTING_CONTACT_MESSAGE,
         failed: (l) => !!(listingContactKind(l.title) || listingContactKind(l.description)),
     },
@@ -282,7 +291,9 @@ export function publishProblems(listing: ListingForRules): Rule[] {
 
 // What is still missing at a given wizard step, or null if that step is done.
 export function problemAtStep(listing: ListingForRules, step: number): string | null {
-    const rule = PUBLISH_RULES.filter((r) => r.step === step && r.failed(listing))[0];
+    // publishOnly rules (contact details) never block moving between steps —
+    // they are only checked at Publish, so a draft is never held up.
+    const rule = PUBLISH_RULES.filter((r) => r.step === step && !r.publishOnly && r.failed(listing))[0];
     return rule ? rule.message : null;
 }
 
@@ -295,7 +306,14 @@ export function firstPublishProblem(
     listing: ListingForRules
 ): { step: number; message: string; key: string } | null {
     const rule = publishProblems(listing)[0];
-    return rule ? { step: rule.step, message: rule.message, key: rule.key } : null;
+    if (!rule) return null;
+    // Contact details: name the field and quote what to remove, so the host
+    // isn't left hunting ("Please remove pods@thecroft from your title").
+    if (rule.key === 'contact_details') {
+        const c = listingContactProblem({ title: listing.title, description: listing.description });
+        if (c) return { step: rule.step, message: c.message, key: rule.key };
+    }
+    return { step: rule.step, message: rule.message, key: rule.key };
 }
 
 // Problems an edit would introduce — the ones the listing does not already

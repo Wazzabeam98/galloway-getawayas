@@ -82,35 +82,48 @@ const DOMAIN = new RegExp(
 // "sleeps 2-4" and a year range are all far shorter.
 const DIGIT_RUN = /\+?\(?\d[\d\s().\-]{7,}\d/g;
 
-function hasPhone(text: string): boolean {
+// The phone run that looks like a number, or null. Returned (not just a bool)
+// so the host can be told exactly what to take out.
+function phoneMatch(text: string): string | null {
     const runs = text.match(DIGIT_RUN) || [];
-    return runs.some((run) => {
+    for (const run of runs) {
         const digits = run.replace(/\D/g, '').length;
-        return digits >= 10 && digits <= 13;
-    });
+        if (digits >= 10 && digits <= 13) return run.trim();
+    }
+    return null;
 }
 
-function hasHandle(text: string): boolean {
+// The @handle that is a handle (not "@ 4pm" or an ordinary word), or null.
+function handleMatch(text: string): string | null {
     HANDLE.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = HANDLE.exec(text))) {
         const name = m[1].replace(/[._]+$/, '').toLowerCase();
-        if (name.length >= 2 && !HANDLE_WORDS.has(name)) return true;
+        if (name.length >= 2 && !HANDLE_WORDS.has(name)) return '@' + m[1].replace(/[._]+$/, '');
     }
-    return false;
+    return null;
+}
+
+// The first contact detail in the text — its kind AND the exact substring, so a
+// message can say "remove pods@thecroft". Email before handle and web so
+// "pods@thecroft.co.uk" reads as the email it is.
+export function listingContactScan(text: string | null | undefined): { kind: ListingContactKind; match: string } | null {
+    const body = String(text || '');
+    if (!body.trim()) return null;
+    const email = body.match(EMAIL);
+    if (email) return { kind: 'email', match: email[0] };
+    const handle = handleMatch(body);
+    if (handle) return { kind: 'handle', match: handle };
+    const url = body.match(URL_PREFIX) || body.match(DOMAIN);
+    if (url) return { kind: 'web', match: url[0] };
+    const phone = phoneMatch(body);
+    if (phone) return { kind: 'phone', match: phone };
+    return null;
 }
 
 // The first kind of contact detail in the text, or null when it is clean.
-// Email is checked before handle and web so "pods@thecroft.co.uk" reads as the
-// email it is.
 export function listingContactKind(text: string | null | undefined): ListingContactKind | null {
-    const body = String(text || '');
-    if (!body.trim()) return null;
-    if (EMAIL.test(body)) return 'email';
-    if (hasHandle(body)) return 'handle';
-    if (URL_PREFIX.test(body) || DOMAIN.test(body)) return 'web';
-    if (hasPhone(body)) return 'phone';
-    return null;
+    return listingContactScan(text)?.kind ?? null;
 }
 
 // The free-text parts of a listing a guest reads, by column, with the word a
@@ -132,7 +145,18 @@ export interface ListingContactProblem {
     field: string;
     label: string;
     kind: ListingContactKind;
+    // The exact offending substring (e.g. "pods@thecroft"), so the message can
+    // name it and the host knows precisely what to take out.
+    match: string;
     message: string;
+}
+
+// The inline message, naming the field and quoting what to remove — the wording
+// shown on every surface: "Contact details can’t go in your listing, as guests
+// can message you once they book. Please remove pods@thecroft from your title."
+export function listingContactFieldMessage(label: string, match: string): string {
+    const base = 'Contact details can’t go in your listing, as guests can message you once they book.';
+    return `${base} Please remove ${match} from your ${label}.`;
 }
 
 // The first field in a row (or a save patch) that carries contact details. Only
@@ -144,10 +168,10 @@ export function listingContactProblem(row: Record<string, any> | null | undefine
         if (!(field in row)) continue;
         const value = row[field];
         if (typeof value !== 'string') continue;
-        const kind = listingContactKind(value);
-        if (kind) {
+        const scan = listingContactScan(value);
+        if (scan) {
             const label = LISTING_CONTACT_FIELDS[field];
-            return { field, label, kind, message: listingContactMessage(kind) };
+            return { field, label, kind: scan.kind, match: scan.match, message: listingContactFieldMessage(label, scan.match) };
         }
     }
     return null;

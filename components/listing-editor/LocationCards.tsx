@@ -213,7 +213,7 @@ export function NeighbourhoodCard({ text, onSave }: { text: string; onSave: (tex
                         placeholder="St Cuthbert Street runs through the heart of Kirkcudbright, a two-minute walk from the harbour and the galleries…"
                         className={wizardAreaCls}
                     />
-                    <ContactNote text={draft} />
+                    <ContactNote text={draft} label="neighbourhood description" />
                     <p className="mt-2 text-right text-sm text-slate-500">{draft.length}/2000</p>
                 </EditorPanel>
             )}
