@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
-import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, ThermometerSun, ThermometerSnowflake, ShowerHead, Flame, Armchair, Umbrella, Anchor, Feather, Users, Gem, MapPin, Maximize2, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
+import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, ThermometerSun, ThermometerSnowflake, ShowerHead, Flame, Armchair, Umbrella, Anchor, Feather, Users, Gem, MapPin, Maximize2, KeyRound, Lock, DoorOpen, Hash, Copy } from 'lucide-react';
 import EmailFirstStep from '@/components/auth/EmailFirstStep';
 import { requireName } from '@/components/auth/FinishSignUpGate';
 import RecruitFaq from '@/components/business/RecruitFaq';
@@ -262,6 +262,14 @@ export default function AddHome() {
     const supabase = createClientComponentClient();
     const [draftId, setDraftId] = useState<string | null>(null);
     const [savingDraft, setSavingDraft] = useState(false);
+    // Set when this draft was copied from an existing listing (?copied=<title>),
+    // so the wizard can say so and the host only changes what's different.
+    const copiedFrom = searchParams?.get('copied') || null;
+    // The host's own listings, offered on the first step as "copy an existing
+    // one" — so someone with a row of near-identical places doesn't re-enter
+    // everything. Loaded once, below.
+    const [myListings, setMyListings] = useState<{ id: string; title: string }[]>([]);
+    const [copying, setCopying] = useState(false);
 
     // An account with no first and last name is asked for them before anything
     // else in this wizard (components/auth/FinishSignUpGate) — never as a step
@@ -277,6 +285,16 @@ export default function AddHome() {
             setSession(session);
             if (session?.user) {
                 setUserName(session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Host');
+                // The host's own listings, newest first, to offer "copy an
+                // existing one" on the first step. Titled ones first so the list
+                // reads well; a blank-titled draft still copies fine.
+                const { data: mine } = await supabase
+                    .from('listings')
+                    .select('id, title, created_at')
+                    .eq('host_id', session.user.id)
+                    .order('created_at', { ascending: false })
+                    .limit(20);
+                setMyListings((mine || []).map((l: any) => ({ id: l.id, title: (l.title || '').trim() })));
             }
 
             const resumeId = searchParams?.get('draft');
@@ -473,6 +491,32 @@ export default function AddHome() {
         }
         toast.success('Saved — you can finish this listing later from your dashboard.', { theme: 'colored' });
         router.push('/dashboard');
+    };
+
+    // Copy one of the host's own listings into a new draft and open it here —
+    // the same path the dashboard "Duplicate" button takes (/api/listings/
+    // duplicate makes an ordinary draft; we reload the wizard onto it).
+    const duplicateFrom = async (sourceId: string) => {
+        if (copying) return;
+        setCopying(true);
+        try {
+            const res = await fetch('/api/listings/duplicate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ listingId: sourceId }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!data || !data.ok || !data.draftId) {
+                toast.error((data && data.error) || 'Could not copy that listing.', { theme: 'colored' });
+                setCopying(false);
+                return;
+            }
+            const copied = data.sourceTitle || '';
+            window.location.href = '/addhome?draft=' + encodeURIComponent(data.draftId) + '&copied=' + encodeURIComponent(copied || '1');
+        } catch {
+            toast.error('Something went wrong.', { theme: 'colored' });
+            setCopying(false);
+        }
     };
 
     // AUTOSAVE. A second and a half after the host stops changing anything, the
@@ -966,9 +1010,42 @@ export default function AddHome() {
                     ))}
                 </div>
 
+                {/* Copied from an existing listing: say so, so the host knows
+                    everything but the title, photos and price came across. */}
+                {copiedFrom && (
+                    <div className="mb-8 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                        <p className="font-semibold text-emerald-900">
+                            Copied{copiedFrom !== '1' ? ` from “${copiedFrom}”` : ' from your listing'}.
+                        </p>
+                        <p className="mt-1 text-sm text-emerald-900/80">
+                            Everything carried across except the title, photos and price — just change what’s different for this place.
+                        </p>
+                    </div>
+                )}
+
                 {/* Step 1: Property type */}
                 {step === 1 && (
                     <div>
+                        {/* Start from an existing listing — for a host with a row
+                            of near-identical places (pods, cabins). A fresh start
+                            only: hidden once they're resuming or already copying. */}
+                        {!draftId && !copiedFrom && myListings.length > 0 && (
+                            <div className="mb-8 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                <h3 className="font-bold text-slate-900">Have a place like this already?</h3>
+                                <p className="mt-1 mb-3 text-sm text-slate-600">
+                                    Copy one of your listings and we’ll carry over everything but the title, photos and price.
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                    {myListings.map((l) => (
+                                        <button key={l.id} type="button" disabled={copying} onClick={() => duplicateFrom(l.id)}
+                                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400 disabled:opacity-50">
+                                            <Copy className="h-3.5 w-3.5" /> {l.title || 'Untitled listing'}
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="mt-3 text-xs text-slate-400">Or start fresh below.</p>
+                            </div>
+                        )}
                         <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Which of these best describes your place?</h2>
                         <p className="text-slate-600 mb-8">Pick the closest match — you can fine-tune details later.</p>
                         <PropertyTypePicker

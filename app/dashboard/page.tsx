@@ -16,6 +16,7 @@ import { createClient } from "@supabase/supabase-js";
 import { accessibleListings, isFullAccess } from "@/lib/access";
 import HideListingBtn from "@/components/HideListingBtn";
 import DeleteListingBtn from "@/components/DeleteListingBtn";
+import DuplicateListingBtn from "@/components/DuplicateListingBtn";
 import { listingsWithPaidRecords, removalFor } from "@/lib/listingRemoval";
 import Link from "next/link";
 import { ChevronRight, Eye, Home, Plus, Star } from "lucide-react";
@@ -33,6 +34,7 @@ function ListingCard({
     canEdit = true,
     canHide = true,
     canDelete = true,
+    canDuplicate = true,
 }: {
     item: any;
     isDraft: boolean;
@@ -43,6 +45,9 @@ function ListingCard({
     canEdit?: boolean;
     canHide?: boolean;
     canDelete?: boolean;
+    // Only the owner may copy a listing — the new draft would belong to them,
+    // and /api/listings/duplicate refuses a source that isn't theirs anyway.
+    canDuplicate?: boolean;
 }) {
     const editHref = isDraft
         ? `/addhome?draft=${item.id}`
@@ -172,6 +177,12 @@ function ListingCard({
                     out of the sitemap and noindexed, and leaves it open for a
                     guest holding a booking. A full-access co-host may hide, the
                     owner's equal; only the owner may delete. */}
+                {/* Duplicate — "create from an existing listing". The owner's,
+                    on every listing of theirs (a draft included — a half-made pod
+                    is worth copying too). */}
+                {canDuplicate && (
+                    <DuplicateListingBtn id={item.id} title={item.title} />
+                )}
                 {!isDraft && !isWaiting && canHide && (
                     <HideListingBtn id={item.id} hidden={isHidden} title={item.title} booked={booked} />
                 )}
@@ -462,6 +473,7 @@ export default async function Dashboard() {
                                     canEdit={canEditOf(item.id)}
                                     canHide={canHideOf(item.id)}
                                     canDelete={false}
+                                    canDuplicate={false}
                                 />
                             ))}
                         </div>
