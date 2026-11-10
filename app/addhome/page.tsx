@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { TownNudgeNote } from '@/components/listing-editor/LocationCards';
+import ContactNote from '@/components/listing-editor/ContactNote';
 import { Accessibility as AccessibilityIcon } from 'lucide-react';
 import { ACCESSIBILITY_AMENITIES } from '@/lib/listingFilters';
 import { formatGBP } from '@/lib/formatMoney';
@@ -1301,6 +1302,7 @@ export default function AddHome() {
                                 maxLength={80}
                                 className="w-full p-4 border rounded-xl text-lg"
                             />
+                            <ContactNote text={title} />
                         </div>
                         <div>
                             <h2 className="text-2xl font-extrabold text-slate-900 mb-2">Next, let's describe your house</h2>
@@ -1346,6 +1348,7 @@ export default function AddHome() {
                                 placeholder="What makes your place special?"
                                 className="w-full p-4 border rounded-xl"
                             />
+                            <ContactNote text={description} />
                         </div>
                     </div>
                 )}
