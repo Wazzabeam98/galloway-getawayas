@@ -178,7 +178,7 @@ export function DirectionsCard({ listingId }: { listingId: string }) {
                     <AutoTextarea id="arrival-directions" aria-label="Directions" value={dirs} onChange={(e) => setDirs(e.target.value)} rows={3}
                         placeholder="Turn at the red postbox, the track is bumpy — park on the gravel by the blue door."
                         className={wizardAreaCls} />
-                    <ContactNote text={dirs} />
+                    <ContactNote text={dirs} label="directions" />
                 </EditorPanel>
             )}
         </>

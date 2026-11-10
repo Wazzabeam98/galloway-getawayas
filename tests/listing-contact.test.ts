@@ -15,7 +15,7 @@ installAliases();
 const {
     listingContactKind, listingContactProblem, listingContactProblems, LISTING_CONTACT_MESSAGE,
 } = require('@/lib/listingContact');
-const { publishProblems, newProblems } = require('@/lib/listingRules');
+const { publishProblems, newProblems, problemAtStep, firstPublishProblem } = require('@/lib/listingRules');
 
 const kind = (t: string) => listingContactKind(t);
 
@@ -83,12 +83,19 @@ test('an empty field is clean', () => {
 
 // --- across a listing --------------------------------------------------------
 
-test('names the field and uses the agreed wording', () => {
+test('names the field and quotes exactly what to remove', () => {
     const p = listingContactProblem({ title: 'Cosy cottage', additional_rules: 'Text 07700 900123 if late' });
     assert.equal(p.field, 'additional_rules');
     assert.equal(p.label, 'house rules');
-    assert.ok(p.message.endsWith(LISTING_CONTACT_MESSAGE));
-    assert.equal(LISTING_CONTACT_MESSAGE, 'To keep guests safe and bookings protected, contact details can’t go in your listing; guests can message you once they book.');
+    assert.equal(p.match, '07700 900123');
+    assert.equal(p.message, 'Contact details can’t go in your listing, as guests can message you once they book. Please remove 07700 900123 from your house rules.');
+});
+
+test('the email a host types when the full address is refused is quoted in the message', () => {
+    const p = listingContactProblem({ title: 'Josie Jane at pods@thecroft' });
+    assert.equal(p.label, 'title');
+    assert.equal(p.match, 'pods@thecroft');
+    assert.ok(p.message.includes('Please remove pods@thecroft from your title'));
 });
 
 test('only the fields present are read — a price change never trips on an old description', () => {
@@ -113,6 +120,24 @@ test('a title or description with contact details fails publishing at the title 
     assert.ok(rule);
     assert.equal(rule.step, 7);
     assert.equal(publishProblems({ title: 'Croft pods', description: 'Lovely' }).some((r: any) => r.key === 'contact_details'), false);
+});
+
+test('contact details are checked only at publish — never a per-step gate on Next', () => {
+    // A listing complete in every other way, so the only thing left is the
+    // contact detail in the title.
+    const l = {
+        propertyType: 'Cottage', street: '1 High Street', city: 'Kirkcudbright',
+        region: 'Dumfries and Galloway', postcode: 'DG6 4JX', checkInMethod: 'Lockbox',
+        amenities: ['Wifi', 'Heating', 'Kitchen'], photoCount: 5,
+        title: 'Croft pods @thecroft', description: 'A lovely place by the harbour', price: 120,
+    };
+    // Moving between steps is NOT blocked (the host builds the draft freely)...
+    assert.equal(problemAtStep(l, 7), null);
+    // ...but it does fail publishing, with the field-naming message.
+    assert.ok(publishProblems(l).some((r: any) => r.key === 'contact_details'));
+    const fp = firstPublishProblem(l);
+    assert.equal(fp.key, 'contact_details');
+    assert.ok(fp.message.includes('from your title'));
 });
 
 test('a clean listing cannot have contact details added by an edit', () => {
