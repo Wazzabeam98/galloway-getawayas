@@ -18,7 +18,7 @@ export default function TitleCard({ title, onSave }: { title: string; onSave: (t
                 <EditorPanel title="What’s your listing called?" onClose={() => setOpen(false)}
                     footer={<PanelSave disabled={hasContactDetails(draft)} onClick={async () => { if (await saved(onSave(draft))) setOpen(false); }} />}>
                     <BigTextInput value={draft} onChange={setDraft} maxLength={80} ariaLabel="Title" />
-                    <ContactNote text={draft} />
+                    <ContactNote text={draft} label="title" />
                 </EditorPanel>
             )}
         </>

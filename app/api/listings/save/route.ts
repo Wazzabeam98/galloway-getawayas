@@ -208,17 +208,21 @@ export async function POST(request: Request) {
         }
 
         // No contact details in the text a guest reads (lib/listingContact) —
-        // the same check the editor's sheets show inline. Only the fields this
-        // patch writes, and not grandfathered: an old description with a phone
-        // number in it still lets the host change the price, but saving the
-        // description again means taking the number out. An admin moderating
-        // is held to it too.
-        const contact = listingContactProblem(safe);
-        if (contact) {
-            return NextResponse.json(
-                { ok: false, error: contact.message, contactField: contact.field },
-                { status: 400 }
-            );
+        // but ONLY once a listing is live (or submitted): a DRAFT saves and
+        // autosaves with anything in it, so a host is never blocked mid-build
+        // (the wall is at Publish). Editing a live listing is held to it, the
+        // same as publishing the change. Only the fields this patch writes, and
+        // not grandfathered: an old description with a phone number still lets
+        // the host change the price, but saving the description again means
+        // taking the number out. An admin moderating is held to it too.
+        if (before.status !== 'draft') {
+            const contact = listingContactProblem(safe);
+            if (contact) {
+                return NextResponse.json(
+                    { ok: false, error: contact.message, contactField: contact.field },
+                    { status: 400 }
+                );
+            }
         }
 
         // The last word on whether a listing still meets the standard, said on

@@ -120,7 +120,7 @@ export function HouseRulesCard({ rules, onSave }: { rules: HouseRules; onSave: (
                     <h3 className="text-base font-semibold text-slate-800 mt-6 mb-2">Additional rules</h3>
                     <AutoTextarea value={d.additionalRules} onChange={(e) => set({ additionalRules: e.target.value })} rows={4}
                         aria-label="Additional rules" placeholder="Share anything else you expect from guests..." className={wizardAreaCls} />
-                    <ContactNote text={d.additionalRules} />
+                    <ContactNote text={d.additionalRules} label="house rules" />
                 </EditorPanel>
             )}
         </>
@@ -161,7 +161,7 @@ export function CheckoutInstructionsCard({ tasks, note, onSave }: { tasks: strin
                     <label htmlFor="checkout-note" className="mt-6 block text-base font-semibold text-slate-900 mb-2">Anything else</label>
                     <AutoTextarea id="checkout-note" value={n} onChange={(e) => setN(e.target.value)} rows={3} maxLength={CHECKOUT_NOTE_MAX}
                         placeholder="Leave the keys on the kitchen table." className={wizardAreaCls} />
-                    <ContactNote text={n} />
+                    <ContactNote text={n} label="checkout instructions" />
                 </EditorPanel>
             )}
         </>

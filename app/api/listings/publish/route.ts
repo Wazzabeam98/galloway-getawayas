@@ -140,8 +140,9 @@ export async function POST(request: Request) {
                 .maybeSingle();
             const contact = listingContactProblem({ ...listing, ...(arrival || {}) });
             if (contact) {
+                // The message already names the field and what to remove.
                 return NextResponse.json(
-                    { ok: false, error: 'Check your ' + contact.label + '. ' + contact.message, contactField: contact.field },
+                    { ok: false, error: contact.message, contactField: contact.field },
                     { status: 400 }
                 );
             }
