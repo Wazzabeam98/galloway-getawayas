@@ -8,6 +8,7 @@ import { listingLocation } from '@/lib/places';
 import { townNudge } from '@/lib/townNudge';
 import { COVERAGE_TOWNS } from '@/lib/serviceProviders';
 import { ChoiceTiles, bigFieldCls, wizardAreaCls } from '@/components/services/wizardKit';
+import ContactNote, { hasContactDetails } from '@/components/listing-editor/ContactNote';
 
 // The editor's Location section, Airbnb's shape: the address on a raised card
 // opening to the address fields, and "Location sharing" opening to the precise-
@@ -200,7 +201,7 @@ export function NeighbourhoodCard({ text, onSave }: { text: string; onSave: (tex
             <EditorCard title="Where you'll be" summary={text.trim() || 'Not added yet'} onClick={() => { setDraft(text); setOpen(true); }} />
             {open && (
                 <EditorPanel title="What’s the area like?" onClose={() => setOpen(false)}
-                    footer={<PanelSave onClick={async () => { if (await saved(onSave(draft))) setOpen(false); }} />}>
+                    footer={<PanelSave disabled={hasContactDetails(draft)} onClick={async () => { if (await saved(onSave(draft))) setOpen(false); }} />}>
                     {/* Kept: where it shows, and what it's not for, aren't guessable. */}
                     <p className="text-base text-slate-600 mb-4">Shown under the map. Keep it about the surroundings, not the house.</p>
                     <AutoTextarea
@@ -212,6 +213,7 @@ export function NeighbourhoodCard({ text, onSave }: { text: string; onSave: (tex
                         placeholder="St Cuthbert Street runs through the heart of Kirkcudbright, a two-minute walk from the harbour and the galleries…"
                         className={wizardAreaCls}
                     />
+                    <ContactNote text={draft} />
                     <p className="mt-2 text-right text-sm text-slate-500">{draft.length}/2000</p>
                 </EditorPanel>
             )}

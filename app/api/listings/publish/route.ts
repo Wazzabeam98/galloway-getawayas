@@ -6,6 +6,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { coordinatePatchFor } from '@/lib/postcodeGeocode';
 import { addressBlockerForPublish, NEW_LISTING_MIN_PHOTOS } from '@/lib/listingRules';
+import { listingContactProblem } from '@/lib/listingContact';
 import { HOST_TERMS_VERSION, hasAgreedToCurrentTerms, termsProblem } from '@/lib/hostTerms';
 import { recordAcceptance } from '@/lib/agreementRecords';
 import { needsPersonName } from '@/lib/personName';
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('id, host_id, title, price_per_night, status, images, street_address, postcode, latitude, longitude, declined_at')
+            .select('id, host_id, title, description, neighbourhood, additional_rules, checkout_note, price_per_night, status, images, street_address, postcode, latitude, longitude, declined_at')
             .eq('id', listingId)
             .maybeSingle();
 
@@ -124,6 +125,26 @@ export async function POST(request: Request) {
                 { ok: false, error: `Add at least ${NEW_LISTING_MIN_PHOTOS} photos before your listing can go live — you have ${photoCount}.` },
                 { status: 400 }
             );
+        }
+
+        // No contact details in what a guest reads (lib/listingContact), on
+        // the first publish — the wizard holds the host on the title step for
+        // it, and this is where a browser cannot argue. A listing that has been
+        // live before is flagged in the admin queue instead, so re-showing an
+        // old one is not blocked on a rule that did not exist when it went up.
+        if (!everPublished) {
+            const { data: arrival } = await admin
+                .from('listing_arrival')
+                .select('arrival_directions')
+                .eq('listing_id', listingId)
+                .maybeSingle();
+            const contact = listingContactProblem({ ...listing, ...(arrival || {}) });
+            if (contact) {
+                return NextResponse.json(
+                    { ok: false, error: 'Check your ' + contact.label + '. ' + contact.message, contactField: contact.field },
+                    { status: 400 }
+                );
+            }
         }
 
         // THE HOST'S NAME. Guests see "Hosted by" and a first name; a listing

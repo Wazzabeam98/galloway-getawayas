@@ -13,6 +13,7 @@ import { publishProblems, fromRow } from '@/lib/listingRules';
 import { propertyTypeLabel } from '@/lib/propertyTypes';
 import { waitedFor } from '@/lib/email';
 import { listingsWithPaidRecords, removalFor } from '@/lib/listingRemoval';
+import { listingContactProblems } from '@/lib/listingContact';
 
 // "Flat in Kirkcudbright" — the guest card's line, so admin reads a listing's
 // type the way a guest will. Just the area when no type was picked.
@@ -46,7 +47,7 @@ export default async function AdminListings() {
     // broken key, and is a lie in the one place that must not tell them.
     const { data: listings, error: listingsError } = await admin
         .from('listings')
-        .select('id, title, location, images, status, host_id, created_at, property_type, street_address, postcode, price_per_night, max_guests, bedrooms, beds, bathrooms, amenities, description, check_in_method, weekend_price, is_luxury')
+        .select('id, title, location, images, status, host_id, created_at, property_type, street_address, postcode, price_per_night, max_guests, bedrooms, beds, bathrooms, amenities, description, neighbourhood, additional_rules, checkout_note, check_in_method, weekend_price, is_luxury')
         .order('created_at', { ascending: false });
 
     if (listingsError) {
@@ -108,6 +109,26 @@ export default async function AdminListings() {
         paidIds = new Set(rows.map((l) => l.id));
     }
 
+    // CONTACT DETAILS IN A LISTING (lib/listingContact). The editor and the
+    // wizard now refuse them, but a listing written before the rule may still
+    // carry an email, a phone number, a web address or a handle — in its
+    // title, description, house rules, neighbourhood, checkout note or
+    // directions. Read here so each one is flagged, here and in the queue.
+    // Only the directions from listing_arrival — never the wifi password or a
+    // door code. A failed read flags nothing from the directions rather than
+    // failing the page.
+    const { data: arrivals } = rows.length
+        ? await admin.from('listing_arrival').select('listing_id, arrival_directions').in('listing_id', rows.map((l) => l.id))
+        : { data: [] };
+    const directionsFor: Record<string, string | null> = {};
+    (arrivals || []).forEach((a: any) => { directionsFor[a.listing_id] = a.arrival_directions; });
+    const contactFlags: Record<string, string[]> = {};
+    rows.forEach((l: any) => {
+        const found = listingContactProblems({ ...l, arrival_directions: directionsFor[l.id] ?? null });
+        if (found.length) contactFlags[l.id] = found.map((p) => p.label);
+    });
+    const flagged = rows.filter((l) => contactFlags[l.id]);
+
     const { data: recent } = await admin
         .from('admin_actions')
         .select('id, action, listing_id, reason, created_at, admin_id, detail')
@@ -161,10 +182,41 @@ export default async function AdminListings() {
                     hostName: hostName[l.host_id] || 'Host',
                     // The wizard's own rules, so the queue and the form cannot
                     // disagree about what "finished" means.
-                    problems: publishProblems(fromRow(l)).map((p) => p.message),
+                    problems: publishProblems(fromRow(l)).map((p) => p.message)
+                        // The title and description are a publish rule already;
+                        // the other fields are named here so nothing goes live
+                        // with a number in its house rules.
+                        .concat(contactFlags[l.id] && !publishProblems(fromRow(l)).some((p) => p.key === 'contact_details')
+                            ? ['Contact details in its ' + contactFlags[l.id].join(', ') + '.']
+                            : []),
                     waitingSince: waitedFor(l.created_at),
                 }))}
             />
+
+            {flagged.length > 0 && (
+                <section className="mb-10 rounded-2xl border-2 border-amber-300 bg-amber-50 p-5">
+                    <h2 className="text-lg font-bold text-amber-950">
+                        Contact details in {flagged.length === 1 ? '1 listing' : flagged.length + ' listings'}
+                    </h2>
+                    <p className="text-sm text-amber-900 mt-1 mb-4">
+                        An email, phone number, web address or social handle that a guest can read.
+                        Hosts can no longer save these; listings written before the rule need them taken out.
+                    </p>
+                    <ul className="divide-y divide-amber-200">
+                        {flagged.map((l) => (
+                            <li key={l.id} className="py-2 flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                                <span>
+                                    <span className="font-semibold text-slate-900">{l.title || 'Untitled listing'}</span>
+                                    <span className="text-slate-600"> — {hostName[l.host_id] || 'Host'} · {l.status} · in its {contactFlags[l.id].join(', ')}</span>
+                                </span>
+                                <Link href={'/edit-listing/' + l.id} className="font-semibold text-slate-900 underline">
+                                    Open editor
+                                </Link>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )}
 
             <div className="space-y-3">
                 {rows.map((l) => (

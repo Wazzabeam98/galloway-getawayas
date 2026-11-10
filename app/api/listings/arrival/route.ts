@@ -5,6 +5,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { checkListing } from '@/lib/access';
 import { logError } from '@/lib/logError';
 import { revealSecret, sealSecret } from '@/lib/listingSecrets';
+import { listingContactProblem } from '@/lib/listingContact';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,6 +66,13 @@ export async function POST(request: Request) {
             if (!(f in body)) continue;
             const v = typeof body[f] === 'string' ? body[f].trim().slice(0, 2000) : '';
             row[f] = v || null;
+        }
+        // No contact details in the directions
+        // (lib/listingContact) — the same check the editor shows inline. The
+        // wifi and what3words are not free text and are not read.
+        const contact = listingContactProblem(row);
+        if (contact) {
+            return NextResponse.json({ ok: false, error: contact.message, contactField: contact.field }, { status: 400 });
         }
         // Encrypted before it is stored (lib/secretBox).
         if (row.wifi_password) row.wifi_password = sealSecret(row.wifi_password, { table: 'listing_arrival', id: listingId });

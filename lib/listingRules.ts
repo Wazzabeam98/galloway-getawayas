@@ -16,6 +16,8 @@
 // a published listing would break the one feature that makes the wizard
 // survivable.
 
+import { listingContactKind, LISTING_CONTACT_MESSAGE } from './listingContact';
+
 // Every real UK format, from "M1 1AA" to "EC1A 1BB". Used to catch a town name
 // typed into the postcode box, not to prove the place exists.
 export const UK_POSTCODE = /^[A-Z]{1,2}[0-9][A-Z0-9]?\s*[0-9][A-Z]{2}$/i;
@@ -229,6 +231,16 @@ export const PUBLISH_RULES: Rule[] = [
         step: 7,
         message: 'Please add a title and description.',
         failed: (l) => !text(l.title) || !text(l.description),
+    },
+    {
+        // No email, phone number, web address or social handle in the title or
+        // description (lib/listingContact, Airbnb's rule). Same step as the
+        // title, so the wizard holds the host on the page that fixes it, and
+        // the admin queue and approval read it from here too.
+        key: 'contact_details',
+        step: 7,
+        message: 'Your title or description includes contact details. ' + LISTING_CONTACT_MESSAGE,
+        failed: (l) => !!(listingContactKind(l.title) || listingContactKind(l.description)),
     },
     {
         key: 'price',
