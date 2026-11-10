@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 
         const admin = adminClient();
         const { data: booking } = await admin
-            .from('bookings').select('id, listing_id, guest_id, check_in, check_out, guests, pets, total_price, nightly_breakdown, amount_paid, amount_refunded, cancellation_policy, cancellation_custom_days, non_refundable').eq('id', bookingId).maybeSingle();
+            .from('bookings').select('id, listing_id, guest_id, check_in, check_out, earliest_check_in, guests, pets, total_price, nightly_breakdown, amount_paid, amount_refunded, cancellation_policy, cancellation_custom_days, non_refundable').eq('id', bookingId).maybeSingle();
         if (!booking) return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
 
         const isGuest = booking.guest_id === user.id;

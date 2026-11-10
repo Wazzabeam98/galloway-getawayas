@@ -13,6 +13,7 @@ import { displayName } from '@/lib/utils';
 import { formatGBP } from '@/lib/formatMoney';
 import { changeoverProblem, minStayProblem, addDaysKey } from '@/lib/stayRules';
 import { guestCalendar } from '@/lib/availability';
+import { nightsTakenProblem } from '@/lib/stayAvailability';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
         const admin = adminClient();
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, guests, children, pets, total_price, status, nightly_breakdown, cancellation_policy, cancellation_custom_days, non_refundable')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, earliest_check_in, guests, children, pets, total_price, status, nightly_breakdown, cancellation_policy, cancellation_custom_days, non_refundable')
             .eq('id', bookingId)
             .maybeSingle();
         if (!booking) return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
@@ -73,7 +74,7 @@ export async function POST(request: Request) {
         }
 
         const { data: listing } = await admin
-            .from('listings').select('max_guests, amenities, checkin_days, checkout_days, min_nights').eq('id', booking.listing_id).maybeSingle();
+            .from('listings').select('max_guests, amenities, checkin_days, checkout_days, min_nights, instant_book').eq('id', booking.listing_id).maybeSingle();
         const petsAllowed = Array.isArray(listing?.amenities) && listing!.amenities.indexOf('Pets allowed') !== -1;
 
         const oldStay: StaySnapshot = {
@@ -110,27 +111,45 @@ export async function POST(request: Request) {
         }) : null;
         if (changeover) return NextResponse.json({ ok: false, error: changeover }, { status: 400 });
 
-        // The minimum stay, enforced exactly as a NEW booking does (lib/stayRules
-        // minStayProblem, the same helper checkout calls): the listing's minimum
-        // or a per-date override for the new check-in day, with the gap-fill
-        // exception. The calendar is read from the same source the booking card
-        // and the change-dates picker use (guestCalendar), with this booking's
-        // OWN nights removed — they're being vacated, so a change butting onto
-        // its old dates isn't treated as filling a gap against itself.
-        //
-        // Only when the DATES move — like the changeover check above. A stay
-        // booked under an older, shorter minimum keeps its length when just the
-        // guest count or pets change; the minimum is re-applied only to dates
-        // the guest actually picks anew.
         const datesChanged = next.checkIn !== oldStay.checkIn || next.checkOut !== oldStay.checkOut;
+
+        // The nights the stay currently holds, and whether the change would
+        // ACQUIRE any night it doesn't already hold. A shortening (or a
+        // guest-count-only change) acquires none — there is nothing new to prove
+        // free, and no reason a request-to-book host must approve giving nights
+        // back. A move or an extension does, and those are the ones that need the
+        // availability wall and (on request-to-book) the host's yes.
+        const oldNights = new Set<string>();
+        for (let k = oldStay.checkIn; k < oldStay.checkOut; k = addDaysKey(k, 1)) oldNights.add(k);
+        let acquiresNewNights = false;
+        for (let k = next.checkIn; k < next.checkOut; k = addDaysKey(k, 1)) {
+            if (!oldNights.has(k)) { acquiresNewNights = true; break; }
+        }
+
+        // The minimum stay, re-applied to any date move (a shortening can break
+        // it) — the same helper checkout calls, the per-date override and the
+        // gap-fill exception. The booking's own nights are removed so a change
+        // butting onto its old dates isn't a gap-fill against itself.
         if (listing && datesChanged) {
             const cal = await guestCalendar(booking.listing_id);
             const unavailable = new Set(cal.blockedNights);
-            for (let k = oldStay.checkIn; k < oldStay.checkOut; k = addDaysKey(k, 1)) {
-                unavailable.delete(k);
-            }
+            oldNights.forEach((k) => unavailable.delete(k));
             const minProblem = minStayProblem(listing as any, next.checkIn, next.checkOut, cal.minNightsOverrides, unavailable);
             if (minProblem) return NextResponse.json({ ok: false, error: minProblem }, { status: 400 });
+        }
+
+        // The night-level availability wall a new booking passes at checkout —
+        // host-blocked nights, iCal-imported bookings (re-fetched live),
+        // pending/confirmed Galloway bookings and prep-held nights — via the
+        // shared helper, so a change can't move a stay onto nights that are taken
+        // (AUDIT 2026-10-31 C2). Only the nights being ACQUIRED need it; this
+        // booking is excluded, since the nights it currently holds are its own.
+        if (listing && acquiresNewNights) {
+            const taken = await nightsTakenProblem(admin, {
+                listingId: booking.listing_id, listing: listing as any,
+                checkInKey: next.checkIn, checkOutKey: next.checkOut, excludeBookingId: booking.id,
+            });
+            if (taken) return NextResponse.json({ ok: false, error: taken.error }, { status: taken.status });
         }
 
         // One open change at a time (partial unique index enforces it too).
@@ -172,7 +191,7 @@ export async function POST(request: Request) {
         // approval. The delta was re-priced on the server above and the listing's
         // max-guests / pets rules were enforced by validateChange, so this is our
         // decision, not the browser's. The host is only told.
-        if (guestChangeIsInstant(initiatedBy, delta)) {
+        if (guestChangeIsInstant(initiatedBy, delta, listing?.instant_book === true, acquiresNewNights)) {
             const claimIso = new Date().toISOString();
             // Claim the row (pending → accepted) as a once-only guard, then rewrite
             // the booking. delta is 0, so no money moves and no balance shifts.

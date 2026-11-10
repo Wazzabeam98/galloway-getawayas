@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, status, payment_status, amount_paid, amount_refunded, cleaning_fee, cancellation_policy, cancellation_custom_days, non_refundable, stripe_payment_intent_id, balance_payment_intent_id, balance_amount')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, earliest_check_in, status, payment_status, amount_paid, amount_refunded, cleaning_fee, cancellation_policy, cancellation_custom_days, non_refundable, stripe_payment_intent_id, balance_payment_intent_id, balance_amount')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -97,7 +97,12 @@ export async function POST(request: Request) {
                 amountPaid: paid,
                 alreadyRefunded: alreadyRefunded,
                 cleaningFee: booking.cleaning_fee,
-                checkIn: booking.check_in,
+                // The ORIGINAL booking's window, not a later date a change moved
+                // the stay to (AUDIT 2026-10-31 C2): earliest_check_in is the
+                // earliest check-in the booking has ever held, so a guest can't
+                // move the stay out to reopen a closed free-cancellation window.
+                // Falls back to check_in for any row written before the anchor.
+                checkIn: String(booking.earliest_check_in || booking.check_in).slice(0, 10),
                 // The terms stamped on the booking at checkout, not the listing's
                 // current policy — a host changing their policy must not move the
                 // refund owed on a stay already agreed.

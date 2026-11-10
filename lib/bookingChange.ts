@@ -43,10 +43,25 @@ export function moneyDirection(delta: number): 'charge' | 'refund' | 'none' {
 // A GUEST change whose re-priced delta is exactly zero — no extra-guest fee, no
 // pet fee, or still within the numbers already paid for — applies straight away
 // with no host approval (the host is only told). Any price change, up or down,
-// and every HOST-proposed change, stays a request. Decided on the server's
-// re-priced delta, never the browser's number.
-export function guestChangeIsInstant(initiatedBy: 'host' | 'guest', delta: number): boolean {
-    return initiatedBy === 'guest' && round2(delta) === 0;
+// and every HOST-proposed change, stays a request.
+//
+// A change that would ACQUIRE a night the stay doesn't already hold (a move, or
+// an extension) needs the host's yes on a REQUEST-TO-BOOK listing, just as a new
+// booking there does — including a zero-cost move — so a guest cannot
+// unilaterally put their stay onto nights the host would have vetoed (AUDIT
+// 2026-10-31 C2). A change that acquires no new night (a shortening, or a
+// guest-count-only change) has no such concern, so it stays instant whatever the
+// listing's booking mode. Decided on the server's re-priced delta, the listing's
+// own instant-book flag, and whether new nights are acquired — never the
+// browser's numbers.
+export function guestChangeIsInstant(
+    initiatedBy: 'host' | 'guest',
+    delta: number,
+    instantBook: boolean,
+    acquiresNewNights: boolean,
+): boolean {
+    if (initiatedBy !== 'guest' || round2(delta) !== 0) return false;
+    return instantBook === true || !acquiresNewNights;
 }
 
 // What a decrease actually refunds: only what the guest has OVERPAID against the

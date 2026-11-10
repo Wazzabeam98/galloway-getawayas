@@ -11,7 +11,8 @@ import { clawBackPayout } from '@/lib/clawback';
 import { whoAnswers, refundForDecrease, balanceAfter, round2 } from '@/lib/bookingChange';
 import { applyBookingChange } from '@/lib/applyBookingChange';
 import { formatGBP } from '@/lib/formatMoney';
-import { changeoverProblem } from '@/lib/stayRules';
+import { changeoverProblem, addDaysKey } from '@/lib/stayRules';
+import { nightsTakenProblem } from '@/lib/stayAvailability';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,15 +80,39 @@ export async function POST(request: Request) {
         {
             const { data: b } = await admin.from('bookings').select('listing_id, check_in, check_out').eq('id', chg.booking_id).maybeSingle();
             const { data: l } = b
-                ? await admin.from('listings').select('checkin_days, checkout_days').eq('id', b.listing_id).maybeSingle()
+                ? await admin.from('listings').select('checkin_days, checkout_days, preparation_time').eq('id', b.listing_id).maybeSingle()
                 : { data: null };
             const newIn = String(chg.new_check_in).slice(0, 10);
             const newOut = String(chg.new_check_out).slice(0, 10);
+            const oldIn = b ? String(b.check_in).slice(0, 10) : newIn;
+            const oldOut = b ? String(b.check_out).slice(0, 10) : newOut;
             const problem = b && l ? changeoverProblem(l as any, newIn, newOut, {
-                checkIn: newIn !== String(b.check_in).slice(0, 10),
-                checkOut: newOut !== String(b.check_out).slice(0, 10),
+                checkIn: newIn !== oldIn,
+                checkOut: newOut !== oldOut,
             }) : null;
             if (problem) return NextResponse.json({ ok: false, error: problem }, { status: 409 });
+
+            // Does accepting ACQUIRE a night the stay doesn't already hold? A
+            // shortening acquires none, so there's nothing new to prove free.
+            const oldNights = new Set<string>();
+            for (let k = oldIn; k < oldOut; k = addDaysKey(k, 1)) oldNights.add(k);
+            let acquiresNewNights = false;
+            for (let k = newIn; k < newOut; k = addDaysKey(k, 1)) {
+                if (!oldNights.has(k)) { acquiresNewNights = true; break; }
+            }
+
+            // The night-level availability wall, re-checked at ACCEPT (dates may
+            // have been taken since the change was proposed) — the same shared
+            // helper checkout and the change route use, so the two can't diverge
+            // (AUDIT 2026-10-31 C2). Only for nights being acquired, with this
+            // booking excluded (its own nights are its own).
+            if (b && l && acquiresNewNights) {
+                const taken = await nightsTakenProblem(admin, {
+                    listingId: b.listing_id, listing: l as any,
+                    checkInKey: newIn, checkOutKey: newOut, excludeBookingId: chg.booking_id,
+                });
+                if (taken) return NextResponse.json({ ok: false, error: taken.error }, { status: taken.status });
+            }
         }
 
         // The GUEST paying, after a guest proposal the host already approved.
