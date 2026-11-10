@@ -1,4 +1,5 @@
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
+import { hotelsOpen } from '@/lib/hotels';
 import Link from 'next/link';
 import Logo from '@/components/base/Logo';
 import NavUser from '@/components/base/NavUser';
@@ -16,6 +17,9 @@ const Navbar = () => {
     // flag that is the same for everyone (not per-viewer), so it stays on the
     // server. Dormant (nothing shown) while it is unset.
     const experiencesOpen = guestExperiencesOpen();
+    // Hotels are a public destination once the feature is live — a launch flag,
+    // same for everyone, so it stays on the server (held off production).
+    const hotels = hotelsOpen();
 
     return (
         <nav className="w-full border-b bg-white sticky top-0 z-50">
@@ -28,6 +32,14 @@ const Navbar = () => {
                             className="hidden sm:block text-sm font-semibold text-slate-800 hover:text-emerald-800 transition"
                         >
                             Experiences
+                        </Link>
+                    )}
+                    {hotels && (
+                        <Link
+                            href="/hotels/browse"
+                            className="hidden sm:block text-sm font-semibold text-slate-800 hover:text-emerald-800 transition"
+                        >
+                            Hotels
                         </Link>
                     )}
                 </div>

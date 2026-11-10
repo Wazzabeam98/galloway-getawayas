@@ -1,6 +1,7 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
+import { hotelsOpen } from '@/lib/hotels';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkListing, ownerOrFullAccess } from '@/lib/access';
 import { contactNumberVisible } from '@/lib/stayWindow';
@@ -161,10 +162,30 @@ export async function GET(
     // "your", which is what splitting "your host" on the space would leave).
     const ownerFirst = hostByline(ownerPublic, null, 'your host');
     const ownerAvatar = ownerPublic && ownerPublic.avatar_url ? getImageUrl(String(ownerPublic.avatar_url)) : null;
-    const listingPhoto = listing && Array.isArray(listing.images) && listing.images[0]
-        ? getImageUrl(String(listing.images[0])) : null;
-    const listingTitle = (listing && listing.title) || 'your stay';
-    const area = listing && listing.location ? publicArea(listing.location) : null;
+    // A hotel booking has no listing — its title, photo and area come from the
+    // room type and its hotel, so the thread header reads the same as a cottage.
+    let hotelPlace: { title: string; images: string[] | null; location: string | null } | null = null;
+    if (!listing && !booking.listing_id && booking.room_type_id && hotelsOpen()) {
+        const { data: rt } = await admin
+            .from('hotel_room_types')
+            .select('name, hotel_id')
+            .eq('id', booking.room_type_id)
+            .maybeSingle();
+        if (rt) {
+            const { data: h } = await admin
+                .from('hotels')
+                .select('name, images, location')
+                .eq('id', rt.hotel_id)
+                .maybeSingle();
+            if (h) hotelPlace = { title: `${h.name} — ${rt.name}`, images: h.images, location: h.location };
+        }
+    }
+
+    const photoSource = listing || hotelPlace;
+    const listingPhoto = photoSource && Array.isArray(photoSource.images) && photoSource.images[0]
+        ? getImageUrl(String(photoSource.images[0])) : null;
+    const listingTitle = (photoSource && photoSource.title) || 'your stay';
+    const area = photoSource && photoSource.location ? publicArea(photoSource.location) : null;
 
     // The header, viewer-aware, keeping the avatar+listing-photo pairing on both
     // sides: the host sees the guest large and "Isla's group of 2"; the guest sees

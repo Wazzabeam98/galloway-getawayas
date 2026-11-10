@@ -76,7 +76,7 @@ const SOURCES: Source[] = [
 const SIGNED_IN_PROFILE_READS: Record<string, string> = {
     'app/api/nav/route.ts': 'the navbar data endpoint — getUser() first, returns { signedIn: false } without a session, so the profiles read only ever runs as authenticated',
     'app/account/page.tsx': 'the account page — redirects to sign-in without a session',
-    'app/dashboard/calendar/page.tsx': 'host dashboard — signed-in host only',
+    'components/dashboard/CottageCalendarClient.tsx': 'host dashboard — signed-in host only',
     'app/dashboard/reviews/page.tsx': 'host dashboard — signed-in host only',
     'app/edit-listing/[id]/page.tsx': 'listing editor — signed-in host/co-host only',
     'app/review/[bookingId]/page.tsx': 'review a stay — reads the booking first, which needs the signed-in guest',

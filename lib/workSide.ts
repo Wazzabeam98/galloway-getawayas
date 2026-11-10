@@ -1,4 +1,5 @@
 import { APPROVED_LISTING_STATUSES, HostPerms, NO_WORK_SIDE, WorkSide } from './workMode';
+import { hotelsOpen } from './hotels';
 
 // Reads what a signed-in person can work as, with their own (RLS-bound)
 // client: an owner can read their own listings and their own provider row
@@ -30,7 +31,13 @@ export async function readWorkSide(
         };
     }
 
-    const [anyListing, approvedListing, coHost, provider, providerCoHost] = await Promise.all([
+    // Owning a hotel is a way of being a host too — behind the launch flag so
+    // nothing changes on production until hotels open. A hotel owner reads their
+    // own hotel under the "owner and co-hosts read their hotel" policy, so the
+    // user's own client is enough.
+    const hotelsLive = hotelsOpen();
+
+    const [anyListing, approvedListing, coHost, provider, providerCoHost, ownedHotel] = await Promise.all([
         // Drafts count for the switch: you're mid-way through becoming a host.
         supabase.from('listings').select('id', { count: 'exact', head: true }).eq('host_id', userId),
         supabase
@@ -69,7 +76,14 @@ export async function readWorkSide(
             .select('provider_id, can_calendar, can_messages, can_bookings, can_listing, can_earnings')
             .eq('user_id', userId)
             .eq('status', 'active'),
+        // Hotels they own (any status — a draft counts, mid-way through listing),
+        // only when hotels are live.
+        hotelsLive
+            ? supabase.from('hotels').select('id', { count: 'exact', head: true }).eq('owner_id', userId)
+            : Promise.resolve({ count: 0 }),
     ]);
+
+    const ownsHotel = hotelsLive && ((ownedHotel && ownedHotel.count) || 0) > 0;
 
     // A business co-host is a provider too — of a live business. Its audience
     // (experience or trade) picks the menu, as an owner's does.
@@ -118,9 +132,10 @@ export async function readWorkSide(
     const coHostRows: any[] = coHost.data || [];
     const coHosts = coHostRows.length > 0;
 
-    // An owner may do everything on their own listing; otherwise it is the OR of
-    // their co-host grants, so a section shows if they have it on any property.
-    const can = (key: keyof HostPerms) => ownsAny || coHostRows.some((r) => r[key] === true);
+    // An owner may do everything on their own listing or hotel; otherwise it is
+    // the OR of their co-host grants, so a section shows if they have it on any
+    // property. A hotel owner has every host permission on their property.
+    const can = (key: keyof HostPerms) => ownsAny || ownsHotel || coHostRows.some((r) => r[key] === true);
     const hostPerms: HostPerms = {
         can_calendar: can('can_calendar'),
         can_messages: can('can_messages'),
@@ -134,17 +149,20 @@ export async function readWorkSide(
     // Co-hosts page above all. An owner is trivially full access.
     const isFullAccessSomewhere =
         ownsAny ||
+        ownsHotel ||
         coHostRows.some(
             (r) => r.can_calendar && r.can_messages && r.can_bookings && r.can_listing && r.can_earnings
         );
 
     return {
-        // Owns a listing (drafts included) or co-hosts one: shown the switch.
-        isHost: ownsAny || coHosts,
+        // Owns a listing (drafts included), owns a hotel, or co-hosts one: shown
+        // the switch and the host menu.
+        isHost: ownsAny || coHosts || ownsHotel,
         // Approved to work on the host side, which decides only the default side
         // for someone who has never used the switch. A co-host's grant is an
-        // owner-approved relationship, so they default onto hosting, as on Airbnb.
-        isApprovedHost: (approvedListing.count || 0) > 0 || coHosts,
+        // owner-approved relationship, so they default onto hosting, as on Airbnb;
+        // a hotel owner likewise defaults onto hosting from the moment they start.
+        isApprovedHost: (approvedListing.count || 0) > 0 || coHosts || ownsHotel,
         isProvider: ownsProvider || !!coProvider,
         providerAudience: (owned && owned.audience) || (coProvider && coProvider.audience) || null,
         providerPerms,

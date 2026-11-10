@@ -239,6 +239,8 @@ distinct:
 - `@gallowaycal.test` — the host-calendar seed (`seed-host-calendar`)
 - `@gallowaycohost.test` — the business co-host accounts (`seed-provider-cohosts`,
   proved by `prove-provider-cohosts`)
+- `@gallowayhotel.test` — the hotels seed (`seed-hotel`, phase one of the hotels
+  vertical; clears only this domain and its own hotel on reset)
 
 If you add a seed, give it a new domain and do not reuse one above. The trade
 logins for walking the trade side are `seed-joiner@gallowaytrade.test` and

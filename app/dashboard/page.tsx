@@ -14,6 +14,8 @@ import { getImageUrl, displayName } from "@/lib/utils";
 import { publicArea } from "@/lib/places";
 import { createClient } from "@supabase/supabase-js";
 import { accessibleListings, isFullAccess } from "@/lib/access";
+import { accessibleHotels } from "@/lib/hotelAccess";
+import { hotelsOpen } from "@/lib/hotels";
 import HideListingBtn from "@/components/HideListingBtn";
 import DeleteListingBtn from "@/components/DeleteListingBtn";
 import { listingsWithPaidRecords, removalFor } from "@/lib/listingRemoval";
@@ -33,6 +35,9 @@ function ListingCard({
     canEdit = true,
     canHide = true,
     canDelete = true,
+    kind = 'listing',
+    editHref: editHrefProp,
+    statLine,
 }: {
     item: any;
     isDraft: boolean;
@@ -43,12 +48,20 @@ function ListingCard({
     canEdit?: boolean;
     canHide?: boolean;
     canDelete?: boolean;
+    // A hotel reuses the same card — same photo, status pill, title and location
+    // — with its own edit link and a rooms/price stat line, and none of the
+    // listing-only actions (Hide/Delete, which call the listings routes).
+    kind?: 'listing' | 'hotel';
+    editHref?: string;
+    statLine?: React.ReactNode;
 }) {
-    const editHref = isDraft
+    const isHotel = kind === 'hotel';
+    const editHref = editHrefProp ?? (isDraft
         ? `/addhome?draft=${item.id}`
         : canEdit
           ? `/edit-listing/${item.id}`
-          : `/homes/${item.id}`;
+          : `/homes/${item.id}`);
+    const viewHref = isHotel ? `/hotels/${item.id}` : `/homes/${item.id}`;
     const isHidden = item.status === 'hidden';
     // Finished, sent, and waiting for an owner to look at it. Nothing writes
     // this status yet — the screens learn it before the data can hold it, so
@@ -97,20 +110,26 @@ function ListingCard({
                         {pillLabel}
                     </span>
                 </div>
-                <h3 className="font-semibold text-slate-900 mt-3 truncate">{item.title || 'Untitled listing'}</h3>
+                <h3 className="font-semibold text-slate-900 mt-3 truncate">{item.title || (isHotel ? 'Untitled hotel' : 'Untitled listing')}</h3>
                 <p className="text-sm text-slate-500 truncate">{item.location ? publicArea(item.location) : 'No location yet'}</p>
-                <div className="mt-1">
-                    <ListingStats
-                        maxGuests={item.max_guests}
-                        bedrooms={item.bedrooms}
-                        bathrooms={item.bathrooms}
-                        petsAllowed={(item.amenities || []).includes('Pets allowed')}
-                        maxPets={item.max_pets}
-                        className="text-slate-500"
-                    />
-                </div>
-                {!isDraft && (
-                    <p className="text-sm font-medium text-slate-700 mt-0.5">{formatPrice(item.price_per_night)} / night</p>
+                {isHotel ? (
+                    <div className="mt-1 text-sm text-slate-500">{statLine}</div>
+                ) : (
+                    <>
+                        <div className="mt-1">
+                            <ListingStats
+                                maxGuests={item.max_guests}
+                                bedrooms={item.bedrooms}
+                                bathrooms={item.bathrooms}
+                                petsAllowed={(item.amenities || []).includes('Pets allowed')}
+                                maxPets={item.max_pets}
+                                className="text-slate-500"
+                            />
+                        </div>
+                        {!isDraft && (
+                            <p className="text-sm font-medium text-slate-700 mt-0.5">{formatPrice(item.price_per_night)} / night</p>
+                        )}
+                    </>
                 )}
                 {isDraft && !sentBack && (
                     <p className="text-sm font-medium text-amber-700 mt-0.5">Click to finish setting up</p>
@@ -139,7 +158,7 @@ function ListingCard({
             <div className="absolute top-3 right-3 z-10 flex gap-2 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition">
                 {!isDraft && !isHidden && !isWaiting && (
                     <Link
-                        href={`/homes/${item.id}`}
+                        href={viewHref}
                         title="See how guests see it"
                         className="h-8 px-3 rounded-full bg-white/95 hover:bg-white shadow-sm flex items-center gap-1.5 text-xs font-semibold text-slate-700"
                     >
@@ -154,7 +173,7 @@ function ListingCard({
                     wears a "Preview" banner saying guests can't see it yet. That
                     is the per-request preview route (the public page is
                     edge-cached and only redirects there). */}
-                {isWaiting && (
+                {!isHotel && isWaiting && (
                     <Link
                         href={`/homes/${item.id}/preview`}
                         title="Preview how guests will see it"
@@ -172,10 +191,10 @@ function ListingCard({
                     out of the sitemap and noindexed, and leaves it open for a
                     guest holding a booking. A full-access co-host may hide, the
                     owner's equal; only the owner may delete. */}
-                {!isDraft && !isWaiting && canHide && (
+                {!isHotel && !isDraft && !isWaiting && canHide && (
                     <HideListingBtn id={item.id} hidden={isHidden} title={item.title} booked={booked} />
                 )}
-                {canDelete && removalFor(booked) === 'delete' && (
+                {!isHotel && canDelete && removalFor(booked) === 'delete' && (
                     <DeleteListingBtn id={item.id} title={item.title} canHide={!isDraft && !isWaiting && !isHidden} />
                 )}
             </div>
@@ -281,6 +300,47 @@ export default async function Dashboard() {
         (h) => h.status === 'published' || h.status === 'hidden' || h.status === 'pending_review'
     );
     const drafts = owned.filter((h) => h.status === 'draft');
+
+    // Hotels this person owns or co-hosts, behind the launch flag. A hotel is a
+    // listing on the dashboard too — same card, same "Your listings" heading —
+    // so a hotel owner lands here, not on a separate hotel layout. The card's
+    // stat line is rooms and a from-price rather than guests/beds/baths, and it
+    // links to the hotel view and the hotel editor; everything else is shared.
+    const hotelsLive = hotelsOpen();
+    let hotelCards: {
+        id: string; title: string; location: string | null; images: string[] | null;
+        status: string; isOwner: boolean; canEdit: boolean; rooms: number; fromPrice: number | null;
+    }[] = [];
+    if (hotelsLive && uid) {
+        const hAccess = await accessibleHotels(uid);
+        const hotelIds = hAccess.map((a) => a.hotelId);
+        if (hotelIds.length) {
+            const [{ data: hotelRows }, { data: roomRows }] = await Promise.all([
+                admin.from('hotels').select('id, name, status, location, images').in('id', hotelIds),
+                admin.from('hotel_room_types').select('hotel_id, price_per_night').in('hotel_id', hotelIds).eq('active', true),
+            ]);
+            const roomCount: Record<string, number> = {};
+            const fromPrice: Record<string, number> = {};
+            (roomRows || []).forEach((r: any) => {
+                roomCount[r.hotel_id] = (roomCount[r.hotel_id] || 0) + 1;
+                const p = Number(r.price_per_night);
+                if (Number.isFinite(p) && (!(r.hotel_id in fromPrice) || p < fromPrice[r.hotel_id])) fromPrice[r.hotel_id] = p;
+            });
+            const accessById: Record<string, typeof hAccess[number]> = {};
+            hAccess.forEach((a) => { accessById[a.hotelId] = a; });
+            hotelCards = (hotelRows || []).map((h: any) => ({
+                id: h.id,
+                title: h.name,
+                location: h.location,
+                images: h.images,
+                status: h.status,
+                isOwner: accessById[h.id]?.isOwner === true,
+                canEdit: accessById[h.id]?.can_listing === true,
+                rooms: roomCount[h.id] || 0,
+                fromPrice: h.id in fromPrice ? fromPrice[h.id] : null,
+            }));
+        }
+    }
 
     const { data: myProfile } = uid
         ? await admin.from('profiles').select('full_name, first_name, last_name, preferred_name, stripe_account_id, stripe_payouts_enabled').eq('id', uid).maybeSingle()
@@ -468,7 +528,36 @@ export default async function Dashboard() {
                     </div>
                 )}
 
-                {published.length === 0 && drafts.length === 0 && helping.length === 0 && (
+                {hotelCards.length > 0 && (
+                    <div className="mt-10">
+                        {(published.length > 0 || drafts.length > 0 || helping.length > 0) && (
+                            <h2 className="text-lg font-semibold text-slate-800 mb-4">Hotels</h2>
+                        )}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {hotelCards.map((h) => {
+                                const isDraft = h.status === 'draft';
+                                const roomLine = `${h.rooms} room type${h.rooms === 1 ? '' : 's'}`;
+                                const statLine = h.fromPrice != null
+                                    ? `${roomLine} · from ${formatPrice(h.fromPrice)}`
+                                    : roomLine;
+                                return (
+                                    <ListingCard
+                                        key={h.id}
+                                        kind="hotel"
+                                        item={{ id: h.id, title: h.title, images: h.images, location: h.location, status: h.status }}
+                                        isDraft={isDraft}
+                                        booked={false}
+                                        canEdit={h.canEdit}
+                                        editHref={isDraft ? `/addhotel?draft=${h.id}` : h.canEdit ? `/edit-hotel/${h.id}` : `/hotels/${h.id}`}
+                                        statLine={statLine}
+                                    />
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {published.length === 0 && drafts.length === 0 && helping.length === 0 && hotelCards.length === 0 && (
                     <div className="text-center py-20 bg-white rounded-2xl border border-slate-200">
                         <h3 className="text-lg font-semibold text-slate-800">No listings yet</h3>
                         <p className="text-slate-500 mt-1 mb-5">Add your first property to start taking bookings.</p>

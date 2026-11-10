@@ -69,6 +69,11 @@ const SERVICE_ROLE_ONLY: ServiceOnly[] = [
         reason: 'who referred whom plus the reward ledger (reward_amount is a money column); attached by the auth callback and listings/publish, waived+stamped by the host-payouts cron, marked paid via /api/admin/referrals, all with the service role',
     },
     {
+        table: 'hotel_access',
+        migration: '20261104070128_hotels_phase_one_tables.sql',
+        reason: 'co-host grants on a hotel (owner\'s equals-by-permission), mirroring listing_access; service-role only in phase one — there is no co-host UI yet — and read only inside has_hotel_permission (SECURITY DEFINER), so it needs no browser grant',
+    },
+    {
         table: 'ai_usage_log',
         migration: '20261104081852_ai_reply_usage.sql',
         reason: 'what each AI reply draft cost — who asked, on which booking, tokens and dollars; written by app/api/messages/threads/[bookingId]/suggest-reply and read by /admin/ai-usage, both with the service role',

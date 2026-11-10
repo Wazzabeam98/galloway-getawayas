@@ -67,11 +67,16 @@ test('/api/health/flags says whether it is set and how it reads, never the value
     const route = require('../app/api/health/flags/route');
 
     let res: any;
-    await new Promise<void>((done) => withEnv({ VERCEL_ENV: 'production', BUSINESS_SIGNUPS_OPEN: ' TRUE ' }, () => {
+    // HOTELS_OPEN unset too, so the hotels block reads held-on-production.
+    await new Promise<void>((done) => withEnv({ VERCEL_ENV: 'production', BUSINESS_SIGNUPS_OPEN: ' TRUE ', HOTELS_OPEN: undefined }, () => {
         route.GET().then((r: any) => { res = r; done(); });
     }));
     // The env is restored before the promise settles only if GET awaited; it
     // does not, so the body was built with the values above.
-    assert.deepEqual(res.body, { env: 'production', businessSignups: { set: true, open: true } });
+    assert.deepEqual(res.body, {
+        env: 'production',
+        businessSignups: { set: true, open: true },
+        hotels: { set: false, open: false },
+    });
     assert.ok(!JSON.stringify(res.body).includes('TRUE'), 'the value itself is not disclosed');
 });
