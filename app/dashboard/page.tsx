@@ -490,6 +490,17 @@ export default async function Dashboard() {
                         >
                             <Plus className="w-4 h-4 mr-2" /> Create a listing
                         </Link>
+                        {/* The quiet line for a host who signed in expecting to find
+                            their places but landed on an empty account — usually a
+                            second account made by typing a different email. Harmless
+                            to a genuinely new host, a lifeline to a stranded one. */}
+                        <p className="mt-6 text-sm text-slate-500">
+                            Expecting to see your places? You may have signed up with a different email.{' '}
+                            <Link href="/contact" className="font-medium text-emerald-700 underline hover:text-emerald-800">
+                                Contact us
+                            </Link>{' '}
+                            and we’ll sort it.
+                        </p>
                     </div>
                 )}
             </div>

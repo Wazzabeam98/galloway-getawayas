@@ -2,9 +2,11 @@
 // through the plain modules it is built on.
 //
 // What matters: one field takes a phone number or an email and the panel can
-// tell which; only UK mobiles are ever texted; the same call creates-or-signs-in
-// for both, so nothing reveals whether an account exists; the welcome-back
-// screen masks the address; and a guest's dates survive a trip through the URL.
+// tell which; only UK mobiles are ever texted; an email is probed without
+// creating, so an unrecognised address is flagged (noAccount) rather than
+// silently made into a second, empty account, and the account is made only when
+// the person chooses to; the welcome-back screen masks the address; and a
+// guest's dates survive a trip through the URL.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -78,6 +80,39 @@ test('email: one create-or-sign-in call, carrying the way back to the page', asy
     const r = await code.sendSignInCode(client, { kind: 'email', value: 'a@b.com' }, 'https://x/auth/callback?next=%2Fhomes%2F1');
     assert.equal(r.ok, true);
     assert.deepEqual(calls, [['otp', { email: 'a@b.com', options: { shouldCreateUser: true, emailRedirectTo: 'https://x/auth/callback?next=%2Fhomes%2F1' } }]]);
+});
+
+test('email probe does not create a user, and an unknown address is flagged, not signed up', async () => {
+    const { client, calls } = fakeClient({ otp: { error: { code: 'otp_disabled', message: 'Signups not allowed for otp' } } });
+    const r = await code.sendSignInCode(client, { kind: 'email', value: 'new@b.com' }, undefined, { createUser: false });
+    assert.equal(r.ok, false);
+    assert.equal(r.noAccount, true);
+    // The panel draws its own "create one or try another" screen, so Supabase's
+    // wording must never be handed to the person.
+    assert.equal(r.message, '');
+    assert.deepEqual(calls, [['otp', { email: 'new@b.com', options: { shouldCreateUser: false } }]]);
+});
+
+test('a recognised address on the probe just sends the code — no account created', async () => {
+    const { client, calls } = fakeClient();
+    const r = await code.sendSignInCode(client, { kind: 'email', value: 'known@b.com' }, undefined, { createUser: false });
+    assert.equal(r.ok, true);
+    assert.deepEqual(calls, [['otp', { email: 'known@b.com', options: { shouldCreateUser: false } }]]);
+});
+
+test('choosing "Create a new one" makes the account', async () => {
+    const { client, calls } = fakeClient();
+    const r = await code.sendSignInCode(client, { kind: 'email', value: 'new@b.com' }, undefined, { createUser: true });
+    assert.equal(r.ok, true);
+    assert.deepEqual(calls, [['otp', { email: 'new@b.com', options: { shouldCreateUser: true } }]]);
+});
+
+test('a genuine send error on the probe still reaches the person in plain English', async () => {
+    const { client } = fakeClient({ otp: { error: { status: 500, message: 'boom' } } });
+    const r = await code.sendSignInCode(client, { kind: 'email', value: 'x@b.com' }, undefined, { createUser: false });
+    assert.equal(r.ok, false);
+    assert.notEqual(r.noAccount, true);
+    assert.match(r.message, /couldn’t send your code/);
 });
 
 test('phone: the same create-or-sign-in call, by text', async () => {
