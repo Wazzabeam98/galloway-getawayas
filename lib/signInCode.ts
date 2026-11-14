@@ -7,11 +7,18 @@
 // provider (Twilio, the account that already texts trades about emergency
 // call-outs) and verifyOtp type 'sms' checks it.
 //
-// The same three rules as the email step:
+// Two rules hold throughout:
 //  - Nothing exists until the code is entered.
-//  - It never says whether an address or number already has an account: the
-//    same "we sent a code" screen follows for both.
 //  - Supabase's raw wording never reaches the person.
+//
+// The email step no longer hides whether an address has an account. It used to
+// send the same "we sent a code" screen either way, so an unrecognised address
+// silently became a new, empty account — which is exactly how a real host ended
+// up stranded on a Gmail address she'd mistyped (Liam, 14 Nov 2026). Now, the
+// Airbnb way: an unrecognised email is said so plainly ("no account with this
+// email — create one, or try another?"), and the account is made only when the
+// person chooses to. This trades the old no-enumeration property for clarity,
+// deliberately, and only on this email panel. Phone is unchanged.
 //
 // Kept free of React and of '@/' imports so the unit test can run it directly.
 
@@ -32,7 +39,25 @@ export function retryAfterSeconds(err: any): number {
     return 0;
 }
 
-export type SendOutcome = { ok: true } | { ok: false; message: string; retryAfter: number };
+// A failed send carries a plain-English message and how long (if at all) to
+// wait before another is allowed. noAccount is the one special case: the email
+// has no account and we were told not to make one, so the panel asks the person
+// whether to create one or fix a typo, rather than silently making a second,
+// empty account (the trap that stranded a real host on a Gmail address she'd
+// typed by mistake — Liam, 14 Nov 2026).
+export type SendOutcome =
+    | { ok: true }
+    | { ok: false; message: string; retryAfter: number; noAccount?: boolean };
+
+// signInWithOtp with shouldCreateUser:false and no matching account comes back
+// as GoTrue's otp_disabled / "Signups not allowed for otp". That is the signal
+// "this address is not on the site", and only ever reached on the create:false
+// probe — a project that truly disallowed signups would be refused on the
+// create:true call too, which this never conflates with it.
+function isNoAccount(err: any): boolean {
+    const message: string = (err && err.message) || '';
+    return (err && err.code === 'otp_disabled') || /signups? not allowed/i.test(message);
+}
 
 export interface CodeClient {
     auth: {
@@ -65,10 +90,18 @@ function explainSmsSendError(err: any): string {
 // emailRedirectTo: where the link in the email (for anyone who taps it rather
 // than typing the code) brings them back to. The caller passes the page they
 // were on, so a guest mid-booking lands back on the listing with their dates.
+// createUser: whether a missing account should be made on the spot. The email
+// panel probes with createUser:false first, so an unrecognised address is
+// caught (noAccount) and the person is asked before a second account is made;
+// only the explicit "Create a new one" sends again with createUser:true. Phone
+// keeps create-or-sign-in (it has its own second-account guard upstream, the
+// phone-login-check), and defaulting to true leaves every other caller as it
+// was.
 export async function sendSignInCode(
     client: CodeClient,
     target: CodeTarget,
-    emailRedirectTo?: string
+    emailRedirectTo?: string,
+    opts: { createUser?: boolean } = {}
 ): Promise<SendOutcome> {
     if (target.kind === 'phone') {
         const { error } = await client.auth.signInWithOtp({
@@ -78,10 +111,14 @@ export async function sendSignInCode(
         if (error) return { ok: false, message: explainSmsSendError(error), retryAfter: retryAfterSeconds(error) };
         return { ok: true };
     }
-    const options: Record<string, unknown> = { shouldCreateUser: true };
+    const createUser = opts.createUser !== false;
+    const options: Record<string, unknown> = { shouldCreateUser: createUser };
     if (emailRedirectTo) options.emailRedirectTo = emailRedirectTo;
     const { error } = await client.auth.signInWithOtp({ email: target.value, options });
-    if (error) return { ok: false, message: explainSendError(error), retryAfter: retryAfterSeconds(error) };
+    if (error) {
+        if (!createUser && isNoAccount(error)) return { ok: false, noAccount: true, message: '', retryAfter: 0 };
+        return { ok: false, message: explainSendError(error), retryAfter: retryAfterSeconds(error) };
+    }
     return { ok: true };
 }
 

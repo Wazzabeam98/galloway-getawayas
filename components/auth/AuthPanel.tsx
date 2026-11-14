@@ -38,9 +38,13 @@ import { getImageUrl } from '@/lib/utils';
  *
  *   welcome — someone who signed out on this device: photo, first name, the
  *             address masked, one Log in button and "Not you?".
- *   start   — "Phone number or email", Continue. The same next screen follows
- *             whether or not the address has an account, so the panel never
- *             reveals who is on the site.
+ *   start   — "Phone number or email", Continue. An email with an account (and
+ *             any phone) goes to the code screen. An email with NO account goes
+ *             to the noaccount screen instead of silently making one — the
+ *             Airbnb way, and the fix for the second-empty-account trap (Liam,
+ *             14 Nov 2026).
+ *   noaccount — email only: "We don't have an account with this email." Create
+ *             one (sends the code and carries on), or go back and try another.
  *   code    — the six digits, emailed or texted depending on what was typed.
  *   details — "Finish signing up", new accounts only (lib/personName
  *             mustFinishSignUp): first and last name, which cannot be skipped
@@ -75,7 +79,7 @@ export function openAuthPanel(next?: string | null, opts: { land?: boolean } = {
     window.dispatchEvent(new CustomEvent(OPEN_AUTH_PANEL, { detail: { next: to } }));
 }
 
-type Screen = 'welcome' | 'start' | 'code' | 'details';
+type Screen = 'welcome' | 'start' | 'noaccount' | 'code' | 'details';
 
 const INPUT = 'w-full rounded-xl border border-slate-400 px-4 py-3.5 text-base text-slate-900 placeholder:text-slate-500 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900';
 const PRIMARY = 'w-full rounded-xl bg-emerald-700 px-6 py-3.5 text-base font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400';
@@ -206,7 +210,12 @@ export default function AuthPanelHost() {
     // under a minute ago and still works, so we go to the code screen with the
     // seconds left on the resend button instead of failing with "wait a
     // minute". The same either way the person arrived (Log in, or Not you?).
-    const send = async (t: CodeTarget): Promise<'sent' | 'already' | false> => {
+    // createUser is honoured for email only (phone forces create-or-sign-in, and
+    // has its own guard above). The email path probes with createUser:false, so
+    // an unrecognised address comes back as 'no_account' instead of quietly
+    // becoming a new one; the noaccount screen's "Create a new one" calls again
+    // with createUser:true.
+    const send = async (t: CodeTarget, createUser = false): Promise<'sent' | 'already' | 'no_account' | false> => {
         setError('');
         setNotice('');
         // A number saved on an account but not yet confirmed for login must not
@@ -234,9 +243,12 @@ export default function AuthPanelHost() {
         // Email goes through the email-flow client so the link in the email works
         // on whichever device it is opened (lib/supabaseEmailFlow); the code
         // itself works from either.
-        const r = await sendSignInCode(t.kind === 'email' ? supabaseEmailFlow() : supabase, t, t.kind === 'email' ? returnLink() : undefined);
+        const r = await sendSignInCode(t.kind === 'email' ? supabaseEmailFlow() : supabase, t, t.kind === 'email' ? returnLink() : undefined, { createUser });
         setBusy(false);
         if (!r.ok) {
+            // No account for this email, and we didn't make one: let the caller
+            // take them to the "create one or try another" screen.
+            if (r.noAccount) return 'no_account';
             // Supabase's own cooldown (a code sent from another tab, say): the
             // code it refers to is still good, so treat it exactly as above.
             if (r.retryAfter > 0) {
@@ -258,11 +270,19 @@ export default function AuthPanelHost() {
 
     const alreadySent = 'We sent you a code less than a minute ago, and it still works. Enter it below, or send a new one when the timer runs out.';
 
-    const sendAndShowCode = async (t: CodeTarget) => {
-        const r = await send(t);
+    const sendAndShowCode = async (t: CodeTarget, createUser = false) => {
+        const r = await send(t, createUser);
+        if (r === 'no_account') { go('noaccount'); return; }
         if (!r) return;
         go('code');
         if (r === 'already') setNotice(alreadySent);
+    };
+
+    // From the noaccount screen's "Create a new one": make the account and send
+    // the code this time (createUser:true), then carry on to the code screen.
+    const createNewAccount = async () => {
+        if (!target) return;
+        await sendAndShowCode(target, true);
     };
 
     const submitStart = async (e?: FormEvent) => {
@@ -411,8 +431,9 @@ export default function AuthPanelHost() {
     const heading =
         screen === 'welcome' ? `Welcome back, ${remembered?.firstName || ''}`
             : screen === 'start' ? 'Log in or sign up'
-                : screen === 'code' ? 'Confirm it’s you'
-                    : 'Finish signing up';
+                : screen === 'noaccount' ? 'No account with this email'
+                    : screen === 'code' ? 'Confirm it’s you'
+                        : 'Finish signing up';
 
     // Masked when the code went to the remembered account: whoever pressed Log
     // in on the welcome screen has not shown they know the full address yet.
@@ -524,6 +545,27 @@ export default function AuthPanelHost() {
                                 </div>
                             }
                         />
+                    </>
+                )}
+
+                {screen === 'noaccount' && target && (
+                    <>
+                        <p className="mt-2 text-center text-slate-600 [text-wrap:pretty]">
+                            We don’t have an account for{' '}
+                            <span className="break-all font-medium text-slate-900">{target.value}</span>.
+                            Create a new one, or try another email?
+                        </p>
+                        <div className="mt-6 space-y-4">
+                            {error && <p role="alert" className="text-center text-sm text-red-600">{error}</p>}
+                            <button type="button" onClick={createNewAccount} disabled={busy} className={PRIMARY}>
+                                {busy ? 'Sending your code…' : 'Create a new one'}
+                            </button>
+                            {stayTick}
+                        </div>
+                        <p className="mt-6 text-center text-sm text-slate-600">
+                            Wrong address?{' '}
+                            <button type="button" onClick={() => go('start')} className={LINK}>Try another email</button>
+                        </p>
                     </>
                 )}
 
